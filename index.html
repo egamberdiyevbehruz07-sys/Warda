@@ -602,7 +602,7 @@ html[data-fx="off"] :is(.stile,.dr-fin-card):hover{transform:none}
   <div id="bzout"></div>
   <details style="margin-top:16px;border-top:1px solid var(--bd);padding-top:12px">
    <summary style="cursor:pointer;font-weight:750">Repair sales: compare with BILLZ and remove duplicates</summary>
-   <p class="mu">Compares the sales saved in Stock Book with BILLZ for every store and date. Where a day is different, the saved copies of that store-day are archived (they stay in Deleted and in a backup file that downloads first) and BILLZ sales are loaded again.</p>
+   <p class="mu">Compares BILLZ-synced sales in Stock Book with BILLZ for every store and date, including gross sales and returns separately. Manual sales are not archived. Where a day differs, only the BILLZ-synced rows are archived (they stay in Deleted and in a backup file that downloads first) and BILLZ sales are loaded again.</p>
    <div class="row3" style="margin-top:10px"><div><label>From</label><input id="rpf" type="date"></div><div><label>To</label><input id="rpt" type="date"></div></div>
    <div class="xl" style="margin-top:12px"><button class="btn" id="rpc">Check (nothing changes)</button><button class="btn pri" id="rpg" hidden>Fix the differences</button></div>
    <p class="mu" id="rpm" style="margin-top:8px" aria-live="polite"></p><div id="rpo"></div>
@@ -679,14 +679,14 @@ const today=()=>iso(new Date());
 const fdt=ts=>{const d=new Date(ts);return pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())};
 const tnm=(t,ts)=>{const d=new Date(ts);return ({in:'Import ',out:'Sale ',rem:'Removal '}[t]||'Transfer ')+d.getFullYear()+'.'+pad(d.getMonth()+1)+'.'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())};
 const ln=l=>l==='Main'?'Main place (old records)':l;
-const vk=x=>[x.sku||x.art||x.bc||'',x.color||'',x.size||''].join('|').toLowerCase();
+const vk=x=>[x.sku||x.art||x.bc||(x.productId?'id:'+String(x.productId):''),x.color||'',x.size||''].join('|').toLowerCase();
 const SZ=['xxs','xs','s','m','l','xl','xxl','xxxl','2xl','3xl'];
 const szKey=v=>{const t=String(v||'').toLowerCase().trim(),i=SZ.indexOf(t);if(i>=0)return[0,i,''];const n=parseFloat(t);return isNaN(n)?[2,0,t]:[1,n,t]};
 const szCmp=(a,b)=>{const x=szKey(a),y=szKey(b);return x[0]-y[0]||x[1]-y[1]||x[2].localeCompare(y[2])};
 function stockOf(moves){
  const m={};
  for(const x of [...moves].reverse()){
-  if(x.ns&&!(x.sku||x.art||x.bc))continue;
+  if(x.ns&&!(x.sku||x.art||x.bc||x.productId))continue;
   const k=vk(x),s=m[k]||(m[k]={k,loc:{},ts:0,ph:!!x.ns});if(!x.ns)s.ph=false;
   if(!x.ns||s.ph)for(const f of[...FL,'photo'])if(x[f])s[f]=x[f];
   if(x.parent_id)s.parent_id=x.parent_id;if(x.productId)s.productId=x.productId;
@@ -695,7 +695,7 @@ function stockOf(moves){
  }
  const M=bzm();
  for(const s of Object.values(m)){
-  const mm=(s.bc&&M[s.bc])||(s.sku&&M['sku:'+s.sku])||(s.art&&M['sku:'+s.art])||(s.productId&&M['id:'+s.productId]);
+  const mm=(s.productId&&M['id:'+s.productId])||(s.bc&&M[s.bc])||(s.sku&&M['sku:'+s.sku])||(s.art&&M['sku:'+s.art]);
   if(mm){if(!s.color&&mm[0])s.color=mm[0];if(!s.photo&&mm[1])s.photo=mm[1];if(!s.size&&mm[2])s.size=mm[2];if(!s.brand&&mm[3])s.brand=mm[3];if(!s.cat&&mm[4])s.cat=mm[4];if(!s.name&&mm[5])s.name=mm[5];if(!s.productId&&mm[8])s.productId=mm[8];if(!s.parent_id&&mm[9]&&mm[9]!=='00000000-0000-0000-0000-000000000000')s.parent_id=mm[9]}
   s.neg={};for(const z in s.loc)if(s.loc[z]<0){s.neg[z]=s.loc[z];s.loc[z]=0}
  }
@@ -704,17 +704,17 @@ function stockOf(moves){
  const index=(x)=>{if(x.bc&&!byBC.has(String(x.bc)))byBC.set(String(x.bc),x);if(x.productId&&!byID.has(String(x.productId)))byID.set(String(x.productId),x);const k=vk(x);if(!byKey.has(k))byKey.set(k,x);const sk=String(x.sku||x.art||'');if(sk){if(!bySku.has(sk))bySku.set(sk,[]);if(!bySku.get(sk).includes(x))bySku.get(sk).push(x)}};
  Object.values(m).forEach(index);
  for(const v of _bv){
-  const sameBC=v.bc?byBC.get(String(v.bc)):null;
-  const sameID=!sameBC&&v.productId?byID.get(String(v.productId)):null;
+  const sameID=v.productId?byID.get(String(v.productId)):null;
+  const sameBC=!sameID&&v.bc?byBC.get(String(v.bc)):null;
   const exactKey=byKey.get(vk(v));
-  let s=sameBC||sameID||exactKey;
+  let s=sameID||sameBC||exactKey;
   if(!s&&(v.sku||v.art)){
    const candidates=bySku.get(String(v.sku||v.art))||[];
    const eligible=candidates.filter(x=>(!x.color||norm(x.color)===norm(v.color))&&(!x.size||norm(x.size)===norm(v.size)));
    if(eligible.length===1)s=eligible[0];
   }
   if(s){
-   const strong=!!(sameBC||sameID||exactKey);
+   const strong=!!(sameID||sameBC||exactKey);
    if(v.color&&(strong||!s.color))s.color=v.color;if(v.size&&(strong||!s.size))s.size=v.size;
    if(v.bc&&!s.bc){s.bc=v.bc;byBC.set(String(v.bc),s)}if(v.sku&&!s.sku)s.sku=v.sku;if(v.art&&!s.art)s.art=v.art;
    if(v.photo&&!s.photo)s.photo=v.photo;if(v.brand&&!s.brand)s.brand=v.brand;if(v.cat&&!s.cat)s.cat=v.cat;if(v.name&&!s.name)s.name=v.name;
@@ -754,7 +754,7 @@ const CHV=o=>`<span class="chv${o?' o':''}">${IC('<path d="m9 6 6 6-6 6"/>')}</s
 const IMGI=IC('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-8 8"/>');
 const thumb=p=>p?`<img class="pic" src="${esc(p)}" alt="" loading="lazy" decoding="async">`:`<div class="phd">${IMGI}</div>`;
 const meta=s=>[s.sku||s.art,s.brand,s.color,s.size].filter(Boolean).map(esc).join(' · ');
-const pick=s=>Object.fromEntries(FL.map(f=>[f,s[f]||'']));
+const pick=s=>({...Object.fromEntries(FL.map(f=>[f,s[f]||''])),...(s&&s.productId?{productId:String(s.productId)}:{}),...(s&&s.parent_id?{parent_id:String(s.parent_id)}:{})});
 const say=(sel,t,b)=>{const m=$(sel);m.textContent=t;m.className=b?'bad':'mu'};
 
 let tmode='move',auth,fs,me='',unsubs=[],moves=[],STK={},TREE=[],view='cat',prevView='cat';
@@ -765,7 +765,7 @@ const TH=[['indigo','#12163a','#2fc4b2'],['samarkand','#eef5f5','#0c8f84'],['gra
 const setLook=(k,v)=>{document.documentElement.dataset[k]=v;try{localStorage.setItem('lk_'+k,v)}catch(e){}};
 ['dens','shape','fx'].forEach(k=>{let v='';try{v=localStorage.getItem('lk_'+k)}catch(e){}setLook(k,v||(k==='dens'?'comfy':k==='shape'?'round':'on'))});
 const flyHtml=()=>{const d=document.documentElement.dataset,seg=(a,k,o)=>`<div class="sg">${o.map(([v,n])=>`<button class="btn sm${d[k]===v?' pri':''}" data-${a}="${v}">${n}</button>`).join('')}</div>`;
- return `<div class="mu" style="padding:8px 10px 0">Theme</div><div class="sws">${TH.map(([k,b,c])=>`<button class="swb${d.theme===k?' on':''}" data-th="${k}" aria-label="${k}" title="${k}" style="background:linear-gradient(135deg,${b} 50%,${c} 50%)"></button>`).join('')}</div><div class="mu" style="padding:8px 10px 0">Upload a theme image (applies instantly, no deploy)</div><div class="custom-theme-controls"><label class="theme-upload-btn" for="theme-upload-file">🎨 Choose theme image</label><input id="theme-upload-file" type="file" accept="image/*,.json,application/json" hidden><button type="button" class="btn sm" id="theme-reset">Reset theme</button></div><div class="mu" id="theme-upload-status" style="padding:0 10px 6px">Choose a screenshot or theme image to extract its colors.</div><div class="mu" style="padding:8px 10px 0">Language / Til / Язык</div><div class="sg"><button class="btn sm${currentLanguage==='uz'?' pri':''}" data-lang="uz">O‘zbekcha</button><button class="btn sm${currentLanguage==='en'?' pri':''}" data-lang="en">English</button><button class="btn sm${currentLanguage==='ru'?' pri':''}" data-lang="ru">Русский</button></div><div class="mu" style="padding:4px 10px 0">Spacing</div>${seg('dn','dens',[['comfy','Comfortable'],['compact','Compact']])}<div class="mu" style="padding:4px 10px 0">Corners</div>${seg('sh','shape',[['round','Round'],['square','Square']])}<div class=\"mu\" style=\"padding:4px 10px 0\">3D effects</div>${seg('fx','fx',[['on','On'],['off','Off']])}<button class="fi" id="lo">Log out (${esc(me)})</button>`};
+ return `<div class="mu" style="padding:8px 10px 0">Theme</div><div class="sws">${TH.map(([k,b,c])=>`<button class="swb${d.theme===k?' on':''}" data-th="${k}" aria-label="${k}" title="${k}" style="background:linear-gradient(135deg,${b} 50%,${c} 50%)"></button>`).join('')}</div><div class="mu" style="padding:8px 10px 0">Upload a theme image (applies instantly, no deploy)</div><div class="custom-theme-controls"><label class="theme-upload-btn" for="theme-upload-file">🎨 Choose theme image</label><input id="theme-upload-file" type="file" accept="image/*,.json,application/json" hidden><button type="button" class="btn sm" id="theme-reset">Reset theme</button></div><div class="mu" id="theme-upload-status" style="padding:0 10px 6px">Choose a screenshot or theme image to extract its colors.</div><div class="mu" style="padding:8px 10px 0">Language / Til / Язык</div><div class="sg"><button class="btn sm${currentLanguage==='uz'?' pri':''}" data-lang="uz">O‘zbekcha</button><button class="btn sm${currentLanguage==='en'?' pri':''}" data-lang="en">English</button><button class="btn sm${currentLanguage==='ru'?' pri':''}" data-lang="ru">Русский</button></div><div class="mu" style="padding:4px 10px 0">Spacing</div>${seg('dn','dens',[['comfy','Comfortable'],['compact','Compact']])}<div class="mu" style="padding:4px 10px 0">Corners</div>${seg('sh','shape',[['round','Round'],['square','Square']])}<div class=\"mu\" style=\"padding:4px 10px 0\">3D effects</div>${seg('fx','fx',[['on','On'],['off','Off']])}<button class="fi" id="lo-all">Log out all devices</button><button class="fi" id="lo">Log out (${esc(me)})</button>`};
 function setTheme(t,clearCustom=false){const H=document.documentElement;if(t!=='custom'&&clearCustom){['bg','side','card','row','c2','tx','mu','bd','ac','on','ok','okbg','bad','s2','s3','s4','s5'].forEach(k=>H.style.removeProperty('--'+k));try{localStorage.removeItem('sb_custom_palette')}catch(e){}}if(H.dataset.theme&&H.dataset.theme!==t){H.classList.add('tt');clearTimeout(window._tt);window._tt=setTimeout(()=>H.classList.remove('tt'),450)}H.dataset.theme=t;const mt=document.querySelector('meta[name="theme-color"]');if(mt)mt.content=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()||mt.content;try{localStorage.setItem('th2',t)}catch(e){}}
 let cur='indigo';try{cur=localStorage.getItem('th2')||cur}catch(e){}if(!TH.some(t=>t[0]===cur))cur='indigo';setTheme(cur);
 function applyCustomPalette(p,persist=true){
@@ -898,7 +898,7 @@ function csv(t){const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"',rows=
 /* ---------- shared: images, Excel, saving ---------- */
 function shrink(f){return new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,700/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);r(c.toDataURL('image/jpeg',.6))};i.src=URL.createObjectURL(f)})}
 const AL={store:['store','shop','branch','dokon','магазин'],sku:['sku'],art:['article','art','artikul','артикул'],name:['name','product','productname','title','nomi','nom','название','наименование','наименованиетовара'],cat:['category','cat','toifa','категория'],brand:['brand','brend','бренд'],color:['color','colour','rang','цвет'],size:['size','olcham','ulcham','razmer','размер'],qty:['qty','quantity','amount','count','howmuch','pieces','miqdori','soni','количество','колво','кол','продано','колвосписания'],bc:['barcode','shtrixkod','штрихкод','баркод'],from:['отправитель'],to:['получатель'],status:['статус'],bid:['ид'],sdate:['датаотправки'],idate:['датаимпорта','дата'],iid:['идимпорта','idимпорта']};
-const nk=s=>String(s).toLowerCase().replace(/^\s*v_/,'').replace(/[^\p{L}]/gu,''),sn=v=>String(v||'').toLowerCase().replace(/\s+/g,' ').trim();
+const nk=s=>String(s).toLowerCase().replace(/^\s*v_/,'').replace(/[^\p{L}]/gu,''),sn=v=>String(v||'').normalize('NFKC').toLowerCase().replace(/[’‘`ʻʼ]/g,"'").replace(/[^\p{L}\p{N}]/gu,'');
 async function readX(file){if(!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))throw new Error('Only Excel files (.xlsx or .xls) are accepted.');
  if(typeof XLSX==='undefined')throw new Error('The Excel reader did not load. Check your internet and refresh the page.');
  const wb=XLSX.read(await file.arrayBuffer()),al=Object.values(AL).flat();let best=null;
@@ -947,7 +947,7 @@ function renderNTR(){const f=$('#tfrom').value,q=$('#tq').value.trim().toLowerCa
 $('#tq').oninput=renderNTR;
 $('#tfrom').onchange=$('#tto').onchange=()=>{trPrev='';renderNTR();tLinesHtml()};
 $('#tph').onchange=async e=>{trPhoto=e.target.files[0]?await shrink(e.target.files[0]):null};
-const findVar=r=>{refreshRenderModel();rebuildVariantLookup();if(r.bc&&_variantByBarcode.has(String(r.bc)))return _variantByBarcode.get(String(r.bc));const direct=STK[vk(r)];if(direct)return direct;const sku=String(r.sku||''),art=String(r.art||''),color=String(r.color||''),size=String(r.size||'');if(sku){const exact=_variantBySkuColorSize.get([sku,color,size].join('|').toLowerCase());if(exact)return exact;const a=_variantBySku.get(sku);if(a&&a.length===1)return a[0]}if(art){const exact=_variantByArticleColorSize.get([art,color,size].join('|').toLowerCase());if(exact)return exact;const a=_variantByArticle.get(art);if(a&&a.length===1)return a[0]}return null};
+const findVar=r=>{refreshRenderModel();return variantForSale(r)};
 function addLine(k){const l=trLines.find(x=>x.k===k);if(l)l.qty=Math.min((Math.round(+l.qty)||0)+1,Math.max(1,avail(l)));else trLines.push({k,qty:1});trPrev='';tLinesHtml()}
 $('#tt').onclick=()=>tmode==='out'?tpl(BZ,'sales-template.xlsx'):tpl(['SKU','Article','Color','Size','Quantity'],'transfer-template.xlsx');
 $('#tf').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value='';if(await routeFile(f,''))return;if(tmode==='bz'){bzPrev='<p class="bad">This is not a Billz transfer report.</p>';bzRender();return}let rows;
@@ -975,7 +975,7 @@ $('#tgo').onclick=async()=>{if(tmode==='bz')return bzSave();const f=$('#tfrom').
 /* ---------- new sale: "Sales by sellers" report ---------- */
 const SM={store:['магазин','store','shop','dokon'],date:['дата','date','sana'],seller:['продавец','seller','sotuvchi','cashier'],name:['наименование','название','name','nomi','product'],art:['артикул','article','art','artikul'],sku:['sku'],bc:['баркод','штрихкод','barcode','shtrixkod'],cat:['категория','category','toifa'],sold:['колвопроданных','sold','soldqty'],ret:['колвовозвращенных','returned','returnedqty'],net:['проданозавычетомвозвратов','net','netsold']};
 const xDate=v=>{if(typeof v==='number'&&v>20000){const o=XLSX.SSF.parse_date_code(v);return o?o.y+'-'+pad(o.m)+'-'+pad(o.d):''}
- const t=String(v==null?'':v),a=t.match(/(\d{4})-(\d{2})-(\d{2})/);if(a)return a[0];const b=t.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);return b?b[3]+'-'+pad(b[2])+'-'+pad(b[1]):''};
+ const t=String(v==null?'':v).trim(),a=t.match(/^(\d{4}-\d{2}-\d{2})(?:[T ](.*))?$/);if(a){const tail=a[2]||'';if(!tail||!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(tail))return a[1];const d=new Date(t);if(!Number.isNaN(d.getTime()))return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(d)}const b=t.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);return b?b[3]+'-'+pad(b[2])+'-'+pad(b[1]):''};
 async function readSales(file){if(!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))throw new Error('Only Excel files (.xlsx or .xls) are accepted.');
  if(typeof XLSX==='undefined')throw new Error('The Excel reader did not load. Check your internet and refresh the page.');
  const wb=XLSX.read(await file.arrayBuffer());let best=null;
@@ -986,15 +986,15 @@ async function readSales(file){if(!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))th
  if(X.store<0||(X.bc<0&&X.art<0&&X.sku<0)||(X.net<0&&X.sold<0))throw new Error('The report needs at least these columns: Магазин, Артикул or Баркод, and Кол-во проданных or Продано за вычетом возвратов.');
  const g=(r,f)=>X[f]<0?'':r[X[f]],num=v=>{const n=parseFloat(String(v).replace(/\s/g,'').replace(',','.'));return isNaN(n)?0:n};
  return best.a.slice(best.i+1).map((r,j)=>{const o={_r:best.i+j+2};['store','seller','name','art','sku','bc','cat'].forEach(f=>o[f]=String(g(r,f)==null?'':g(r,f)).trim());
-  o.date=xDate(g(r,'date'));const net=X.net>=0&&String(g(r,'net')).trim()!==''?num(g(r,'net')):num(g(r,'sold'))-num(g(r,'ret'));o.q=Math.round(net);return o}).filter(o=>o.store||o.bc||o.art||o.sku)}
+  o.date=xDate(g(r,'date'));const soldRaw=X.sold>=0&&String(g(r,'sold')).trim()!==''?num(g(r,'sold')):null,retRaw=X.ret>=0&&String(g(r,'ret')).trim()!==''?num(g(r,'ret')):null;const hasParts=soldRaw!==null||retRaw!==null;const net=X.net>=0&&String(g(r,'net')).trim()!==''?num(g(r,'net')):(soldRaw??0)-(retRaw??0);o.q=Math.round(net);if(hasParts){o.soldQty=Math.max(0,Math.round(soldRaw||0));o.returnedQty=Math.max(0,Math.round(retRaw||0))}return o}).filter(o=>o.store||o.bc||o.art||o.sku)}
 let soLines=[],soSk=[],soFile='',soInfo='';
 function openNSO(){prevView=view==='nso'?'out':view;soLines=[];soSk=[];soFile='';soInfo='';$('#smsg').textContent='';$('#sprev').innerHTML='';go('nso')}
-function soIndex(){const bc={},art={};for(const v of Object.values(STK)){if(v.ph)continue;if(v.bc&&!bc[v.bc])bc[v.bc]=v;for(const a of new Set([v.sku,v.art].filter(Boolean).map(x=>x.toLowerCase())))(art[a]=art[a]||[]).push(v)}return{bc,art}}
-function soMatch(r,ix){if(r.bc&&ix.bc[r.bc])return ix.bc[r.bc];const a=(r.art||r.sku||'').toLowerCase();if(a&&ix.art[a]){const L=ix.art[a];return L.length===1?L[0]:'many'}return null}
+function soIndex(){const bc={},art={},pid={};for(const v of Object.values(STK)){if(v.ph&&!v.billz)continue;if(v.productId)pid[String(v.productId)]=v;if(v.bc&&!bc[v.bc])bc[v.bc]=v;for(const a of new Set([v.sku,v.art].filter(Boolean).map(x=>x.toLowerCase())))(art[a]=art[a]||[]).push(v)}return{bc,art,pid}}
+function soMatch(r,ix){const pid=r.productId||r.product_id||r.pid;if(pid&&ix.pid[String(pid)])return ix.pid[String(pid)];const v=variantForSale({product_id:pid,productId:pid,bc:r.bc,sku:r.sku||'',art:r.art||'',color:r.color||'',size:r.size||''});if(v)return v;const a=(r.art||r.sku||'').toLowerCase();if(a&&ix.art[a]){const L=ix.art[a];return L.length===1?L[0]:'many'}return null}
 function renderNSO(){const run={},by={};let nS=0,nR=0;
- soLines.forEach(l=>{if(l.ns){l.av=0;l.short=false;if(l.qty<0)nR++;by[l.store]=(by[l.store]||0)+l.qty;return}const k=l.k+'|'+l.store,have=k in run?run[k]:((STK[l.k]&&STK[l.k].loc[l.store])||0);l.av=Math.max(0,have);l.short=l.qty>0&&have<l.qty;run[k]=have-l.qty;if(l.short)nS++;if(l.qty<0)nR++;by[l.store]=(by[l.store]||0)+l.qty});
+ soLines.forEach(l=>{const sold=l.soldQty!=null?Math.max(0,+l.soldQty||0):Math.max(0,+l.qty||0),returned=l.returnedQty!=null?Math.max(0,+l.returnedQty||0):Math.max(0,-(+l.qty||0));if(l.ns){l.av=0;l.short=false;if(returned)nR++;by[l.store]=(by[l.store]||0)+l.qty;return}const k=l.k+'|'+l.store,have=k in run?run[k]:((STK[l.k]&&STK[l.k].loc[l.store])||0);l.av=Math.max(0,have);l.short=sold>0&&have<sold;run[k]=have-sold+returned;if(l.short)nS++;if(returned)nR++;by[l.store]=(by[l.store]||0)+l.qty});
  const tot=soLines.reduce((a,l)=>a+l.qty,0);
- $('#slines').innerHTML=soLines.length?`<div class="tw"><table class="sm"><thead><tr><th>Store</th><th>Item</th><th>Seller</th><th>Quantity</th><th></th></tr></thead><tbody>${soLines.map((l,i)=>`<tr class="r z${i%2}"><td><b>${esc(l.store)}</b><div class="mu">${l.date.split('-').reverse().join('.')}</div></td><td><b>${esc(l.name||l.sku||l.art)}</b><div class="mu">${meta(l.ns?l.item:(STK[l.k]||l))}${l.ns?' · <span class="pill" style="background:var(--c2);color:var(--mu)">Not in system: added to catalog with 0 pcs</span>':''}</div>${l.short?`<div class="bad" style="font-weight:400;font-size:12px">Only ${l.av} in ${esc(l.store)}: the extra is saved as sold, stock stays 0</div>`:''}</td><td class="mu">${esc(l.seller||'-')}</td><td>${l.qty<0?'<span class="pill" style="background:rgba(255,123,132,.16);color:var(--bad);margin-right:6px">Return</span>'+(-l.qty):l.qty}</td><td><button class="btn sm" data-srm="${i}">Remove</button></td></tr>`).join('')}</tbody></table></div><div class="mu" style="margin-top:8px">${Object.entries(by).map(([z,q])=>`<b>${esc(z)}</b> ${q} pcs`).join(' · ')}</div>${nS?`<div class="bad" style="font-weight:400;margin-top:6px">${nS} line${nS>1?'s':''} sell more than the store has in stock. They are marked above.</div>`:''}`
+ $('#slines').innerHTML=soLines.length?`<div class="tw"><table class="sm"><thead><tr><th>Store</th><th>Item</th><th>Seller</th><th>Quantity</th><th></th></tr></thead><tbody>${soLines.map((l,i)=>`<tr class="r z${i%2}"><td><b>${esc(l.store)}</b><div class="mu">${l.date.split('-').reverse().join('.')}</div></td><td><b>${esc(l.name||l.sku||l.art)}</b><div class="mu">${meta(l.ns?l.item:(STK[l.k]||l))}${l.ns?' · <span class="pill" style="background:var(--c2);color:var(--mu)">Not in system: added to catalog with 0 pcs</span>':''}</div>${l.short?`<div class="bad" style="font-weight:400;font-size:12px">Only ${l.av} in ${esc(l.store)}: the extra is saved as sold, stock stays 0</div>`:''}</td><td class="mu">${esc(l.seller||'-')}</td><td>${(l.returnedQty||l.qty<0)?'Sold '+(l.soldQty||0)+' · Return '+(l.returnedQty||Math.abs(l.qty))+' · Net '+l.qty:(l.soldQty!=null?l.soldQty:l.qty)}</td><td><button class="btn sm" data-srm="${i}">Remove</button></td></tr>`).join('')}</tbody></table></div><div class="mu" style="margin-top:8px">${Object.entries(by).map(([z,q])=>`<b>${esc(z)}</b> ${q} pcs`).join(' · ')}</div>${nS?`<div class="bad" style="font-weight:400;margin-top:6px">${nS} line${nS>1?'s':''} sell more than the store has in stock. They are marked above.</div>`:''}`
   :'<div class="empty">No sales yet. Upload your sales report above.</div>';
  $('#sgo').textContent='Save sales'+(soLines.length?' ('+tot+' pcs)':'')}
 $('#st').onclick=()=>tpl(['Магазин','Дата','Продавец','Наименование','Артикул','Баркод','Категория','Кол-во проданных','Кол-во возвращенных','Продано за вычетом возвратов'],'sales-template.xlsx');
@@ -1004,23 +1004,25 @@ async function loadSales(f,redir,pre){let rows;
  try{rows=pre||await readSales(f)}catch(x){$('#sprev').innerHTML='<p class="bad">'+esc(x.message||'Could not read this file.')+'</p>';return}
  refreshRenderModel();const ix=soIndex(),sk=[],map={},add=[];
  rows.forEach((r,i)=>{const w='Row '+(r._r||i+2)+': ',st=STORES.find(z=>sn(z)===sn(r.store));
-  if(!r.q)return;
+  const soldPart=Math.max(0,Math.round(r.soldQty!=null?r.soldQty:r.q)),returnPart=Math.max(0,Math.round(r.returnedQty!=null?r.returnedQty:-r.q));if(!r.q&&!soldPart&&!returnPart)return;
   if(!st){sk.push(w+'store "'+(r.store||'empty')+'" not found');return}
   const v=soMatch(r,ix);
   if(!v){if(!(r.name||r.art||r.bc||r.sku)){sk.push(w+'item has no name, article or barcode');return}
-   const it={sku:r.sku,art:r.art,bc:r.bc,name:r.name,brand:'',cat:r.cat,color:'',size:''},nkey='ns|'+(r.bc||r.art||r.sku||r.name).toLowerCase(),date=r.date||today(),key=[st,date,nkey,r.seller].join('|');
-   if(map[key])map[key].qty+=r.q;else{const l={k:nkey,ns:true,item:it,store:st,date,seller:r.seller,qty:r.q,name:r.name||r.art||r.bc};map[key]=l;add.push(l)}return}
+   const it={sku:r.sku,art:r.art,bc:r.bc,name:r.name,brand:'',cat:r.cat,color:r.color||'',size:r.size||'',...(r.productId||r.product_id?{productId:String(r.productId||r.product_id)}:{})},nkey='ns|'+(r.productId||r.bc||r.art||r.sku||r.name).toLowerCase(),date=r.date||today(),key=[st,date,nkey,r.seller].join('|');
+   if(map[key]){map[key].qty+=r.q;map[key].soldQty+=soldPart;map[key].returnedQty+=returnPart}else{const l={k:nkey,ns:true,item:it,store:st,date,seller:r.seller,qty:r.q,soldQty:soldPart,returnedQty:returnPart,name:r.name||r.art||r.bc};map[key]=l;add.push(l)}return}
   if(v==='many'){sk.push(w+(r.name||r.art)+' has several colors or sizes and no matching barcode');return}
   const date=r.date||today(),key=[st,date,v.k,r.seller].join('|');
-  if(map[key])map[key].qty+=r.q;else{const l={k:v.k,store:st,date,seller:r.seller,qty:r.q,name:v.name||r.name};map[key]=l;add.push(l)}});
- /* skip what was already saved: compare file totals per store+date+item+seller with saved sales, add only the difference */
- const nsK=x=>'ns|'+(x.bc||x.art||x.sku||x.name||'').toLowerCase(),sg=(st,d,k,se)=>[st,d,k,se||''].join('|'),have={};
- live().forEach(x=>{if(x.type!=='out')return;const g=sg(x.from,x.date,x.ns?nsK(x):vk(x),x.seller);have[g]=(have[g]||0)+(+x.qty||0)});
- soLines.forEach(l=>{const g=sg(l.store,l.date,l.k,l.seller);have[g]=(have[g]||0)+l.qty});
+  if(map[key]){map[key].qty+=r.q;map[key].soldQty+=soldPart;map[key].returnedQty+=returnPart}else{const l={k:v.k,store:st,date,seller:r.seller,qty:r.q,soldQty:soldPart,returnedQty:returnPart,name:v.name||r.name};map[key]=l;add.push(l)}});
+ /* Reconcile gross sold and returns separately. This also repairs older net-only Billz rows without deleting history. */
+ const nsK=x=>'ns|'+(x.productId||x.bc||x.art||x.sku||x.name||'').toLowerCase(),sg=(st,d,k,se)=>[st,d,k,se||''].join('|'),have={};
+ const bucket=g=>have[g]||(have[g]={sold:0,returned:0}),billzSource=String(f&&f.name||'').toLowerCase()==='billz';
+ live().forEach(x=>{if(x.type!=='out'||(billzSource&&!(x.note==='Billz sync'||String(x.bz||'').startsWith('nightly-sale|'))))return;const g=sg(x.from,x.date,x.ns?nsK(x):vk(x),x.seller),h=bucket(g),q=+x.qty||0;if(q<0||x.ret)h.returned+=Math.abs(q);else h.sold+=q});
+ soLines.forEach(l=>{const g=sg(l.store,l.date,l.k,l.seller),h=bucket(g);h.sold+=Math.max(0,+l.soldQty||0);h.returned+=Math.max(0,+l.returnedQty||0)});
  let dup=0,dupQ=0;
- const keep=add.filter(l=>{const g=sg(l.store,l.date,l.k,l.seller),h=have[g]||0;if(!h)return l.qty!==0;const d=l.qty-h;
-  if(d>0){dup+=h;dupQ++;l.qty=d;return true}
-  dup+=Math.min(h,l.qty);dupQ++;if(d<0)sk.push((l.name||'Item')+' ('+l.store+', '+l.date.split('-').reverse().join('.')+'): file shows '+l.qty+' but '+h+' already saved, nothing added');return false});
+ const keep=add.filter(l=>{const g=sg(l.store,l.date,l.k,l.seller),h=have[g]||{sold:0,returned:0},sourceSold=Math.max(0,+l.soldQty||0),sourceRet=Math.max(0,+l.returnedQty||0),dSold=sourceSold-h.sold,dRet=sourceRet-h.returned;
+  if(dSold<=0&&dRet<=0){dup+=h.sold+h.returned;dupQ++;if(dSold<0||dRet<0)sk.push((l.name||'Item')+' ('+l.store+', '+l.date.split('-').reverse().join('.')+'): saved sold/return totals exceed the source report; nothing was deleted.');return false}
+  if(dSold<0||dRet<0)sk.push((l.name||'Item')+' ('+l.store+', '+l.date.split('-').reverse().join('.')+'): existing quantity is higher than the latest BILLZ totals; only missing positive differences will be added.');
+  l.soldQty=Math.max(0,dSold);l.returnedQty=Math.max(0,dRet);l.qty=l.soldQty-l.returnedQty;dupQ++;return !!(l.soldQty||l.returnedQty)});
  soLines=soLines.concat(keep).sort((a,b)=>STORES.indexOf(a.store)-STORES.indexOf(b.store));soSk=sk;soFile=f.name;
  const ds=[...new Set(keep.map(l=>l.date))].sort().map(d=>d.split('-').reverse().join('.')),ss=[...new Set(keep.map(l=>l.store))];
  $('#sprev').innerHTML=(redir?'<p class="mu" style="margin:10px 0 0">This is a sales report, so it was opened here in New sale.</p>':'')+`<p class="mu" style="margin:10px 0 0">${keep.length} new lines added from ${esc(f.name)}${dupQ?` · <b>${dupQ} already uploaded before, ${dup} pcs skipped</b>`:''}${ds.length?' · '+ds.join(', '):''}${ss.length?' · '+ss.map(esc).join(', '):''}${keep.some(l=>l.qty<0)?' · includes returns':''}${keep.some(l=>l.ns)?' · '+keep.filter(l=>l.ns).length+' not in system':''}${sk.length?` · <span class="bad">${sk.length} skipped</span>`:''}</p>`+skList(sk);
@@ -1034,10 +1036,12 @@ async function soSave(auto){const m=$('#smsg');refreshRenderModel();
   if(nS&&!auto&&!confirm(nS+' line(s) sell more than the store has in stock. The extra pieces are saved as sold and the stock stays at 0. Save?'))return 0;
   const ids={},recs=[];
   soLines.forEach(l=>{const gk=l.store+'|'+l.date;ids[gk]=ids[gk]||newId();
-   const b={type:'out',...pick(l.ns?l.item:STK[l.k]),from:l.store,to:'',date:l.date,note:auto?'Billz sync':'Excel: '+soFile,tid:ids[gk],tname:'Sale '+l.date.replace(/-/g,'.')+' · '+l.store,seller:l.seller||'',photo:null},r=l.qty<0?{ret:true}:{};
-   const ded=!l.ns&&l.short?Math.max(0,Math.min(l.qty,l.av)):l.qty;
-   if(l.ns)recs.push({...b,ns:true,qty:l.qty,...r});
-   else{if(ded)recs.push({...b,qty:ded,...r});if(l.qty>ded)recs.push({...b,ns:true,qty:l.qty-ded})}});
+   const b={type:'out',...pick(l.ns?l.item:STK[l.k]),from:l.store,to:'',date:l.date,note:auto?'Billz sync':'Excel: '+soFile,tid:ids[gk],tname:'Sale '+l.date.replace(/-/g,'.')+' · '+l.store,seller:l.seller||'',photo:null};
+   const sold=l.soldQty!=null?Math.max(0,Math.round(+l.soldQty||0)):Math.max(0,Math.round(+l.qty||0)),returned=l.returnedQty!=null?Math.max(0,Math.round(+l.returnedQty||0)):Math.max(0,Math.round(-(+l.qty||0)));
+   if(l.ns){if(sold)recs.push({...b,ns:true,qty:sold});if(returned)recs.push({...b,ns:true,qty:-returned,ret:true});return;}
+   // BILLZ is authoritative during automatic sync: keep the full physical movement, including temporary negative balances.
+   const ded=auto?sold:(l.short?Math.max(0,Math.min(sold,l.av)):sold);
+   if(ded)recs.push({...b,qty:ded});if(sold>ded)recs.push({...b,ns:true,qty:sold-ded});if(returned)recs.push({...b,qty:-returned,ret:true});});
   const b=$('#sgo');b.disabled=true;let n=0;
  try{await commit(recs,auto);n=recs.length;soLines=[];soSk=[];soFile='';m.textContent='';$('#sprev').innerHTML='';if(!auto)go('out')}
  catch(e){m.textContent=e.message==='cancelled'?'Not saved.':'Save failed. Check your internet and try again.';b.disabled=false;if(auto)throw e}b.disabled=false;return n}
@@ -1342,18 +1346,18 @@ async function bzAll(path,params,pickRows,limit){const out=[],seenPages=new Set(
  return out}
 const bzCat=r=>{const c=(r.product_categories||r.categories||[])[0];return (c&&c.level_1&&c.level_1[0])||(r.categories_path&&r.categories_path[0])||(c&&c.name)||r.category_name||''};
 const bzSettle=()=>new Promise(r=>setTimeout(r,400));
-async function bzShops(){const sh=bzBody(await bzGet('/v1/shop',{page:1,limit:100,only_allowed:'true'})),map={};
- (sh.shops||[]).forEach(s=>{const z=STORES.find(x=>sn(x)===sn(s.name));if(z)map[s.id]=z});
- const ids=Object.keys(map);if(!ids.length)throw new Error('No Billz shop matches your stores ('+STORES.join(', ')+'). Billz shops: '+(sh.shops||[]).map(s=>s.name).join(', '));
- return{map,ids,unused:(sh.shops||[]).filter(s=>!map[s.id]).map(s=>s.name)}}
+async function bzShops(){const shops=await bzAll('/v1/shop',{only_allowed:'true'},j=>j.shops,100),map={};
+ shops.forEach(s=>{const z=STORES.find(x=>sn(x)===sn(s.name));if(z)map[s.id]=z});
+ const ids=Object.keys(map);if(!ids.length)throw new Error('No Billz shop matches your stores ('+STORES.join(', ')+'). Billz shops: '+shops.map(s=>s.name).join(', '));
+ return{map,ids,unused:shops.filter(s=>!map[s.id]).map(s=>s.name)}}
 
 async function bzImports(map,ids,from,to){
  const rows=await bzAll('/v1/import-report-table',{start_date:from,end_date:to,shop_ids:ids,import_type:'import'},j=>j.rows);
  refreshRenderModel();const saved=new Set(live().filter(x=>x.type==='in'&&x.bz).map(x=>x.bz+'|'+x.to)),legacy=live().filter(x=>x.type==='in'&&!x.bz),seen=new Set(),gid={},recs=[];let dup=0;
  rows.forEach(r=>{const q=Math.round(+r.imported_qty||0),z=map[r.shop_id],date=xDate(r.date);if(q<=0||!z||!date||date<from||date>to)return;
-  const sku=r.product_sku||'',bc=r.product_barcode||'',bz=r.external_import_id+'|'+(bc||sku),key=bz+'|'+z;
+  const sku=r.product_sku||'',bc=r.product_barcode||'',pid=r.product_id||r.productId||'',importId=r.external_import_id||r.import_id||r.id||'unknown',bz=importId+'|'+(pid||bc||sku),key=bz+'|'+z;
   if(saved.has(key)||seen.has(key)){dup++;return}
-  const v0=findVar({bc,art:sku,sku:'',color:'',size:''}),it=v0?pick(v0):{sku:'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:'',size:''};
+  const a=bzAttr(r),v0=findVar({product_id:pid,bc,art:sku,sku:r.product_sku||'',color:a.color,size:a.size}),it=v0?pick(v0):{sku:r.product_sku||'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:a.color,size:a.size,...(pid?{productId:String(pid)}:{})};
   if(legacy.some(x=>x.to===z&&x.date===date&&x.qty===q&&vk(x)===vk(it))){dup++;return}
   seen.add(key);const g=z+'|'+date+'|'+r.external_import_id;gid[g]=gid[g]||newId();
   recs.push({type:'in',...it,to:z,from:'',qty:q,date,note:'Billz import #'+r.external_import_id,tid:gid[g],tname:'Import '+date.replace(/-/g,'.'),photo:null,bz})});
@@ -1365,9 +1369,9 @@ async function bzTransfers(map,ids,from,to){
  const acc=t=>t.accepted_at&&!/^(0001|1970)/.test(String(t.accepted_at));
  for(const t of tr){const f=map[t.departure_shop_id],tt=map[t.arrival_shop_id];if(!f||!tt)continue;if(!acc(t)){open++;continue}
   const items=await bzAll('/v2/transfer-items/'+t.id,{},j=>j.items,1000),date=xDate(t.created_at)||today();
-  for(const it of items){const p=it.product||it.product_info||{},q=Math.round((+it.arrived_measurement_value)||(+it.transfer_measurement_value)||0),bc=p.barcode||'',sku=p.sku||'';
-   if(q<=0)continue;const v=findVar({bc,art:sku,sku:'',color:'',size:''});if(!v){miss++;continue}
-   const bz=t.external_id+'|'+(bc||sku),key=bz+'|'+f+'|'+tt+'|'+v.k;if(saved.has(key)){dup++;continue}saved.add(key);
+  for(const it of items){const p=it.product||it.product_info||{},q=Math.round((+it.arrived_measurement_value)||(+it.transfer_measurement_value)||0),bc=p.barcode||it.product_barcode||'',sku=p.sku||it.product_sku||'',pid=p.id||p.product_id||it.product_id||it.productId||'',a=bzAttr({...it,...p});
+   if(q<=0)continue;const v=findVar({product_id:pid,bc,art:sku,sku,color:a.color,size:a.size});if(!v){miss++;continue}
+   const bz=t.external_id+'|'+(pid||bc||sku),key=bz+'|'+f+'|'+tt+'|'+v.k;if(saved.has(key)){dup++;continue}saved.add(key);
    const g=f+'|'+tt+'|'+t.external_id;gid[g]=gid[g]||newId();
    recs.push({type:'move',...pick(v),from:f,to:tt,qty:q,date,note:'Billz transfer #'+t.external_id,tid:gid[g],tname:'Transfer '+date.replace(/-/g,'.')+' · '+f+' → '+tt+' #'+t.external_id,bz,photo:null})}}
  if(recs.length)await commit(recs,true);
@@ -1377,8 +1381,8 @@ async function bzWriteoffs(map,ids,from,to){
  const rows=await bzAll('/v1/write-off-report-table',{start_date:from,end_date:to,shop_ids:ids,currency:'UZS'},j=>j.Items||j.items);
  refreshRenderModel();const saved=new Set(live().filter(x=>x.type==='rem'&&x.bz).map(x=>x.bz+'|'+x.from)),legacy=live().filter(x=>x.type==='rem'&&!x.bz),seen=new Set(),recs=[],gid={};let dup=0,miss=0;
  rows.forEach(r=>{const f=map[r.shop_id],date=xDate(r.created_at),q=Math.round(+r.written_off_measurement_value||0);if(!f||!date||q<=0||date<from||date>to)return;
-  const bc=r.product_barcode||'',sku=r.product_sku||'',v=findVar({bc,art:sku,sku:'',color:'',size:''});if(!v){miss++;return}
-  const bz='wo'+(r.write_off_external_id||r.write_off_id)+'|'+(bc||sku),key=bz+'|'+f;
+  const bc=r.product_barcode||'',sku=r.product_sku||'',pid=r.product_id||r.productId||'',a=bzAttr(r),v=findVar({product_id:pid,bc,art:sku,sku,color:a.color,size:a.size});if(!v){miss++;return}
+  const bz='wo'+(r.write_off_external_id||r.write_off_id)+'|'+(pid||bc||sku),key=bz+'|'+f;
   if(saved.has(key)||seen.has(key)||legacy.some(x=>x.from===f&&x.date===date&&x.qty===q&&vk(x)===v.k)){dup++;return}seen.add(key);
   const g=f+'|'+(r.write_off_id||date);gid[g]=gid[g]||newId();
   recs.push({type:'rem',...pick(v),from:f,to:'',qty:q,date,note:[r.write_off_reason,r.description].filter(Boolean).join(' · '),r:'other',tid:gid[g],tname:r.write_off_name||('Write-off '+date.replace(/-/g,'.')),photo:null,bz})});
@@ -1387,11 +1391,19 @@ async function bzWriteoffs(map,ids,from,to){
 
 async function bzSales(map,ids,from,to){
  const rows=await bzAll('/v1/product-general-table',{start_date:from,end_date:to,shop_ids:ids,detalization:'day',detalization_by_position:'true',price_type:0,currency:'UZS'},j=>j.products_stats_by_date);
- const rr=[];rows.forEach((r,i)=>{const q=Math.round((+r.sold_measurement_value||0)-(+r.returned_measurement_value||0));if(!q)return;
-  rr.push({_r:i+1,store:map[r.shop_id]||r.shop_name||'',seller:String(r.seller_full_name||'').trim(),name:r.product_base_name||r.product_name||'',art:r.product_sku||'',sku:'',bc:r.product_barcode||'',cat:bzCat(r),date:xDate(r.date),q})});
+ const rr=[];rows.forEach((r,i)=>{
+  let sold=Math.max(0,Math.round(+r.sold_measurement_value||0)),returned=Math.max(0,Math.round(+r.returned_measurement_value||0));
+  const netRaw=r.net_sold_measurement_value;
+  if(!sold&&!returned&&netRaw!=null&&netRaw!==''){const net=Math.round(+netRaw||0);sold=Math.max(0,net);returned=Math.max(0,-net)}
+  if(!sold&&!returned)return;
+  const a=bzAttr(r),pid=r.product_id||r.productId||'';
+  const net=netRaw!=null&&netRaw!==''?Math.round(+netRaw||0):sold-returned;
+  rr.push({_r:i+1,store:map[r.shop_id]||r.shop_name||'',seller:String(r.seller_full_name||r.seller_name||'').trim(),name:r.product_base_name||r.product_name||'',art:r.product_sku||'',sku:r.product_sku||'',bc:r.product_barcode||'',productId:String(pid||''),product_id:String(pid||''),color:a.color,size:a.size,cat:bzCat(r),date:xDate(r.date),q:net,soldQty:sold,returnedQty:returned});
+ });
  await bzSettle();soLines=[];soSk=[];
  const res=await loadSales({name:'Billz'},false,rr);const n=await soSave(true);
- return 'Sales: '+n+' lines added'+(res.dup?', '+res.dup+' already there':'')+(res.sk.length?', '+res.sk.length+' skipped':'')}
+ return 'Sales: '+n+' movement lines added'+(res.dup?', '+res.dup+' already reconciled':'')+(res.sk.length?', '+res.sk.length+' warnings':'')}
+
 
 async function bzSync(auto){if(bzBusy)return;bzBusy=true;const b=$('#bzallgo')||$('#bzgo');if(b)b.disabled=true;
  if(!auto)$('#bzlog').innerHTML='';
@@ -1434,8 +1446,8 @@ async function bzCheck(){if(bzBusy)return;bzBusy=true;const out=$('#bzout');out.
  try{bzLog('Reading Billz stock…');const{map,ids}=await bzShops();
   const rows=await bzAll('/v1/stock-report-table',{report_date:today(),shop_ids:ids,currency:'UZS'},j=>j.rows);
   refreshRenderModel();const B={},S={},bt={},st={},nm={};
-  rows.forEach(r=>{const z=map[r.shop_id];if(!z)return;const q=Math.round(+r.measurement_value||0),k=z+'|'+(r.product_barcode||r.product_sku||r.product_id);bt[z]=(bt[z]||0)+q;B[k]=(B[k]||0)+q;nm[k]=r.product_base_name||r.product_name||k});
-  Object.values(STK).forEach(s=>STORES.forEach(z=>{const q=s.loc[z]||0;if(!q)return;st[z]=(st[z]||0)+q;const k=z+'|'+(s.bc||s.art||s.sku);S[k]=(S[k]||0)+q;nm[k]=nm[k]||s.name||k}));
+  rows.forEach(r=>{const z=map[r.shop_id];if(!z)return;const q=Math.round(+r.measurement_value||0),a=bzAttr(r),pid=r.product_id||r.productId||'',bc=r.product_barcode||'',sku=r.product_sku||'',fallback='sku:'+sku+'|'+normalizeColorLabel(a.color||'')+'|'+String(a.size||'').trim(),ident=pid?'id:'+pid:(bc?'bc:'+bc:fallback),k=z+'|'+ident;bt[z]=(bt[z]||0)+q;B[k]=(B[k]||0)+q;nm[k]=r.product_base_name||r.product_name||k});
+  Object.values(STK).forEach(s=>STORES.forEach(z=>{const q=s.loc[z]||0;if(!q)return;st[z]=(st[z]||0)+q;const fallback='sku:'+(s.art||s.sku)+'|'+normalizeColorLabel(s.color||'')+'|'+String(s.size||'').trim(),ident=s.productId?'id:'+s.productId:(s.bc?'bc:'+s.bc:fallback),k=z+'|'+ident;S[k]=(S[k]||0)+q;nm[k]=nm[k]||s.name||k}));
   const tot=STORES.map(z=>`<tr class="r"><td><b>${esc(z)}</b></td><td>${bt[z]||0}</td><td>${st[z]||0}</td><td>${(st[z]||0)-(bt[z]||0)}</td></tr>`).join('');
   const diff=[...new Set([...Object.keys(B),...Object.keys(S)])].filter(k=>(B[k]||0)!==(S[k]||0)).sort((a,b)=>Math.abs((S[b]||0)-(B[b]||0))-Math.abs((S[a]||0)-(B[a]||0)));
   out.innerHTML=`<h3 style="margin-top:14px">Stock: Billz and this site</h3><div class="tw"><table class="sm"><thead><tr><th>Store</th><th>Billz</th><th>This site</th><th>Difference</th></tr></thead><tbody>${tot}</tbody></table></div>`
@@ -1467,11 +1479,11 @@ async function bzFreshPrepare(){
   const agg={};let neg=0,noCode=0;
   rows.forEach(r=>{const z=map[r.shop_id];if(!z)return;const q=Math.round(+r.measurement_value||0);
    if(q<0){neg++;return}if(q===0)return;
-   const sku=r.product_sku||'',bc=r.product_barcode||'';if(!sku&&!bc){noCode++;return}
-   const a=bzAttr(r),it={sku:'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:(a.color?normalizeColorLabel(a.color):(nameColor(r.product_base_name||r.product_name||'')?normalizeColorLabel(r.product_base_name||r.product_name||''):'')),size:a.size},k=z+'|'+vk(it)+'|'+bc;
+   const sku=r.product_sku||'',bc=r.product_barcode||'',pid=r.product_id||r.productId||'';if(!sku&&!bc&&!pid){noCode++;return}
+   const a=bzAttr(r),it={sku:'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:(a.color?normalizeColorLabel(a.color):(nameColor(r.product_base_name||r.product_name||'')?normalizeColorLabel(r.product_base_name||r.product_name||''):'')),size:a.size,...(pid?{productId:String(pid)}:{})},k=z+'|'+(pid?'id:'+pid:vk(it)+'|'+bc);
    if(agg[k])agg[k].qty+=q;else agg[k]={it,z,qty:q}});
   const list=Object.values(agg),per={},by={};
-  list.forEach(o=>{const s=per[o.z]||(per[o.z]={n:0,q:0});s.n++;s.q+=o.qty;const kk=o.z+'|'+vk(o.it);(by[kk]=by[kk]||new Set()).add(o.it.bc)});
+  list.forEach(o=>{const s=per[o.z]||(per[o.z]={n:0,q:0});s.n++;s.q+=o.qty;const kk=o.z+'|'+vk(o.it);(by[kk]=by[kk]||new Set()).add(o.it.productId?'id:'+o.it.productId:(o.it.bc?'bc:'+o.it.bc:'sku:'+o.it.art))});
   const clash=Object.values(by).filter(s=>s.size>1).length,colN=list.filter(o=>o.it.color).length,sizN=list.filter(o=>o.it.size).length,totalPieces=list.reduce((sum,o)=>sum+o.qty,0);
   const lv=live(),cnt={},FA={};lv.forEach(x=>cnt[x.type]=(cnt[x.type]||0)+1);rows.forEach(r=>[...(r.product_attributes||[]),...(r.product_custom_fields||[])].forEach(a=>{if(!a)return;const n=a.attribute_name||a.name||a.custom_field_name||'?',v=String(a.attribute_value||a.value||a.custom_field_value||(a.attribute_name?a.name:'')||'').trim();if(!v)return;const o=FA[n]||(FA[n]={c:0,s:new Set()});o.c++;if(o.s.size<4)o.s.add(v)}));
   const NMT={in:'imports',move:'transfers',out:'sales',rem:'removals'};
@@ -1484,7 +1496,7 @@ async function bzFreshPrepare(){
    +'<p class="mu">Color found on '+colN+' of '+list.length+' items, size on '+sizN+'. Product catalog metadata and settings are kept; the new BILLZ catalog will be loaded before quantities are rebuilt.</p>'
    +(clash?'<p class="bad">'+clash+' article/color/size combinations have different barcodes. This can merge distinct BILLZ variants. Reset is blocked until these identifiers are resolved.</p>':'')
    +(neg?'<p class="bad">'+neg+' BILLZ stock rows have negative quantities. Reset is blocked so those stock discrepancies are not silently discarded.</p>':'')
-   +(noCode?'<p class="bad">'+noCode+' BILLZ stock rows have positive quantity but no SKU/article or barcode. Reset is blocked so their pieces are not silently omitted.</p>':'')
+   +(noCode?'<p class="bad">'+noCode+' BILLZ stock rows have positive quantity but no product ID, SKU/article or barcode. Reset is blocked so their pieces are not silently omitted.</p>':'')
    +(!list.length?'<p class="bad">BILLZ returned no positive stock rows for this date. Nothing to load.</p>':'')
    +'<div class="tw"><table class="sm"><thead><tr><th>Sample item</th><th>Store</th><th>Color</th><th>Size</th><th>Pcs</th></tr></thead><tbody>'+list.slice(0,8).map(o=>'<tr class="r"><td>'+esc(o.it.name||o.it.art||o.it.bc)+'</td><td>'+esc(o.z)+'</td><td>'+esc(o.it.color)+'</td><td>'+esc(o.it.size)+'</td><td>'+o.qty+'</td></tr>').join('')+'</tbody></table></div>'
    +'<p class="mu" style="margin-top:8px">Fields Billz sends with items: '+(Object.entries(FA).map(([n,o])=>esc(n)+' ('+o.c+' items, e.g. '+esc([...o.s].join(', '))+')').join('; ')||'none')+'</p>'+'<details style="margin-top:8px"><summary class="mu">Raw Billz row (for checking color and size)</summary><pre class="mu" style="white-space:pre-wrap;word-break:break-all">'+esc(JSON.stringify(raw,null,1).slice(0,1500))+'</pre></details>'
@@ -1511,7 +1523,7 @@ async function bzFreshRun(){
   for(let i=0;i<lv.length;i+=25){const w=writeBatch(fs);lv.slice(i,i+25).forEach(x=>w.update(doc(fs,'moves',x._id),{del}));await w.commit();started=true;say('Archived '+Math.min(i+25,lv.length)+' of '+lv.length+' active records…')}
   if(lv.length){const archivedIds=new Set(lv.map(x=>x._id));moves=moves.map(x=>archivedIds.has(x._id)?{...x,del}:x);_renderModelSource=null}
   say('Loading BILLZ opening stock for '+P.rep+'…');
-  const gid={},recs=P.list.map(o=>{gid[o.z]=gid[o.z]||newId();return{type:'in',...o.it,to:o.z,from:'',qty:o.qty,date:P.rep,note:'BILLZ opening stock after clean rebuild',tid:gid[o.z],tname:'BILLZ opening stock · '+o.z,photo:null,bz:'open|'+(o.it.bc||o.it.art)}});
+  const gid={},recs=P.list.map(o=>{gid[o.z]=gid[o.z]||newId();return{type:'in',...o.it,to:o.z,from:'',qty:o.qty,date:P.rep,note:'BILLZ opening stock after clean rebuild',tid:gid[o.z],tname:'BILLZ opening stock · '+o.z,photo:null,bz:'open|'+(o.it.productId?'id:'+o.it.productId:(o.it.bc||o.it.art))}});
   await commit(recs,true);started=true;
   bzPlan=null;$('#bzf').value=P.start;if(!$('#bzt').value)$('#bzt').value=today();
   say('Opening stock loaded ('+P.totalPieces+' pcs). Re-syncing BILLZ imports, transfers, write-offs and sales from '+P.start+'…');
@@ -1531,7 +1543,7 @@ const xSave=(wb,n)=>XLSX.writeFile(wb,n);
 const CV=[['Black','qora black чер чёр'],['White','oq beliy bely white бел'],['Red','qizil red крас'],['Blue',"ko'k kok blue siniy siniy син голуб havorang"],['Green','yashil green зел'],['Yellow','sariq yellow жёлт жел'],['Brown','jigarrang jigar brown korichneviy korichniviy korichnev korichn коричн'],['Gray','kulrang kul gray grey seriy sery seryy serii сер серый'],['Pink','pushti pink roziviy rozoviy rozeviy розов'],['Purple','binafsha purple fioletovy фиол'],['Orange','orange apelsin оранж'],['Beige','bej beji beige беж'],['Ivory',"ivory ayvriy ayvori айвори айвори"],['Cream','krem cream molochniy molochnyi malochniy крем молочн'],['Navy','navy'],['Burgundy','bordoviy bordovy bordo бордо'],['Khaki','xaki khaki хаки'],['Gold','tilla gold золот'],['Silver','kumush silver серебр']];
 function nameColor(n){n=String(n||'').toLowerCase().replace(/[’‘`ʻʼ]/g,"'");const pk=s=>{for(const t of s.split(/[^a-zа-яё']+/)){if(!t)continue;for(const[c,ws]of CV)for(const w of ws.split(' '))if(t===w||(/[а-яё]/.test(w)&&t.startsWith(w)))return c}return''};const p=n.match(/\(([^)]*)\)/g);return(p&&pk(p.join(' ')))||pk(n)}
 let _bs=null,_bm={},_bv=[];function bzm(){if(_bs!==moves){_bs=moves;_bm={};_bv=[];moves.filter(x=>x.type==='meta'&&x.m&&!x.stale).forEach(d=>{Object.assign(_bm,d.m);if(Array.isArray(d.variants))_bv.push(...d.variants)})}return _bm}
-const billzMetaFor=x=>{const M=bzm();return (x.bc&&M[String(x.bc)])||(x.sku&&M['sku:'+String(x.sku)])||(x.art&&M['sku:'+String(x.art)])||(x.product_id&&M['id:'+String(x.product_id)])||null};
+const billzMetaFor=x=>{const M=bzm();return (x.productId&&M['id:'+String(x.productId)])||(x.product_id&&M['id:'+String(x.product_id)])||(x.bc&&M[String(x.bc)])||(x.sku&&M['sku:'+String(x.sku)])||(x.art&&M['sku:'+String(x.art)])||null};
 const emptyAttr=v=>{const t=String(v==null?'':v).trim().toLowerCase();return !t||['-','—','none','null','нет','не указано','не указан','не задано','без цвета','not specified','not applicable','not tracked','n/a'].includes(t)};
 function normalizeColorLabel(v){const raw=String(v||'').trim();if(emptyAttr(raw))return '';const t=raw.toLowerCase().replace(/[’‘`ʻʼ]/g,"'").replace(/ё/g,'е');
  if(/айвори|ayvori|ayvriy|\bivory\b/.test(t))return 'Ivory';
@@ -1549,8 +1561,8 @@ function normalizeColorLabel(v){const raw=String(v||'').trim();if(emptyAttr(raw)
 const rawColorOf=x=>{const m=billzMetaFor(x);if(!emptyAttr(x.color))return String(x.color).trim();if(m&&!emptyAttr(m[0]))return String(m[0]).trim();return nameColor(x.name)?String(x.name||'').trim():''};
 const colorOf=x=>normalizeColorLabel(rawColorOf(x));
 let _kindIdxSource=null,_kindIdx={};
-function kindIndex(){if(_kindIdxSource!==STK){_kindIdxSource=STK;_kindIdx={};Object.values(STK||{}).forEach(v=>{if(v.bc)_kindIdx['bc:'+v.bc]=v;if(v.sku)_kindIdx['sku:'+v.sku]=v;if(v.art)_kindIdx['art:'+v.art]=v})}return _kindIdx}
-function itemKind(x){const idx=kindIndex(),hit=(x.bc&&idx['bc:'+x.bc])||(x.sku&&idx['sku:'+x.sku])||(x.art&&(idx['art:'+x.art]||idx['sku:'+x.art]))||{};const d=[x.cat,x.category,x.product_categories&&x.product_categories.map(a=>a&&a.name).join(' '),x.categories_path&&x.categories_path.join(' '),x.name,x.product_name,hit.cat,hit.name].filter(Boolean).join(' ').toLowerCase().replace(/[’‘`ʻʼ]/g,"'");
+function kindIndex(){if(_kindIdxSource!==STK){_kindIdxSource=STK;_kindIdx={};Object.values(STK||{}).forEach(v=>{if(v.productId)_kindIdx['id:'+v.productId]=v;if(v.bc)_kindIdx['bc:'+v.bc]=v;if(v.sku)_kindIdx['sku:'+v.sku]=v;if(v.art)_kindIdx['art:'+v.art]=v})}return _kindIdx}
+function itemKind(x){const idx=kindIndex(),hit=(x.productId&&idx['id:'+x.productId])||(x.product_id&&idx['id:'+x.product_id])||(x.bc&&idx['bc:'+x.bc])||(x.sku&&idx['sku:'+x.sku])||(x.art&&(idx['art:'+x.art]||idx['sku:'+x.art]))||{};const d=[x.cat,x.category,x.product_categories&&x.product_categories.map(a=>a&&a.name).join(' '),x.categories_path&&x.categories_path.join(' '),x.name,x.product_name,hit.cat,hit.name].filter(Boolean).join(' ').toLowerCase().replace(/[’‘`ʻʼ]/g,"'");
  if(/accessor(y|ies)|аксессуар|aksessuar|romol|ro.?mol|towel|полотенц|soat|watch|часы|scar(f|ves)|sharf|шарф|kamar|belt|sumka|су(м|м)ка|bag\b|wallet|hamyon|jewel|bijut|earring|necklace|brеlok|брелок|umbrella|зонт|perfume|парфюм|sunglass|очки/.test(d))return 'accessory';
  if(/shoe|shoes|footwear|обув|туфл|кроссов|кед\b|ботин|сапог|тапоч|sandal|sneaker|tufli|krossov|botinka|etik\b|poyabzal|lofer|slipper|мокасин/.test(d))return 'footwear';
  if(/одежд|рубаш|пальто|плать|брюк|джинс|куртк|пиджак|юбк|кофт|свитер|футболк|худи|shirt|blouse|coat|jacket|dress|trouser|pants|jeans|skirt|sweater|hoodie|t-shirt|cardigan|vest|legging|palto|rubashka|k[o'']?ylak|shim\b|jemp|sviter|kostyum|kardigan|kofta|shorts|clothing|apparel/.test(d))return 'clothing';
@@ -1634,7 +1646,7 @@ let _variantLookupSource=null,_variantByBarcode=new Map(),_variantByProductId=ne
 function rebuildVariantLookup(){
  if(_variantLookupSource===STK)return;
  _variantLookupSource=STK;_variantByBarcode=new Map();_variantByProductId=new Map();_variantBySkuColorSize=new Map();_variantByArticleColorSize=new Map();_variantBySku=new Map();_variantByArticle=new Map();
- const add=(map,key,v)=>{if(!key)return;if(!map.has(key))map.set(key,v);};
+ const add=(map,key,v)=>{if(!key)return;if(!map.has(key))map.set(key,v);else if(map.get(key)&&map.get(key).k!==v.k)map.set(key,null);};
  const addList=(map,key,v)=>{if(!key)return;const a=map.get(key)||[];a.push(v);map.set(key,a);};
  for(const v of Object.values(STK||{})){
   if(v.bc)add(_variantByBarcode,String(v.bc));
@@ -1646,8 +1658,8 @@ function rebuildVariantLookup(){
 }
 function variantForSale(x){
  rebuildVariantLookup();
- if(x.bc&&_variantByBarcode.has(String(x.bc)))return _variantByBarcode.get(String(x.bc));
- const pid=x.product_id||x.productId;if(pid&&_variantByProductId.has(String(pid)))return _variantByProductId.get(String(pid));
+ const pid=x.product_id||x.productId;if(pid&&_variantByProductId.has(String(pid))){const exact=_variantByProductId.get(String(pid));if(exact)return exact;}
+ if(x.bc&&_variantByBarcode.has(String(x.bc))){const exact=_variantByBarcode.get(String(x.bc));if(exact)return exact;}
  const color=String(x.color||''),size=String(x.size||''),sku=String(x.sku||'');
  if(sku){const exact=_variantBySkuColorSize.get([sku,color,size].join('|').toLowerCase());if(exact)return exact;const list=_variantBySku.get(sku)||[];if(list.length===1)return list[0];}
  const art=String(x.art||'');if(art){const exact=_variantByArticleColorSize.get([art,color,size].join('|').toLowerCase());if(exact)return exact;const list=_variantByArticle.get(art)||[];if(list.length===1)return list[0];}
@@ -1748,7 +1760,7 @@ async function bzProducts(allowBusy=false){if(bzBusy&&!allowBusy)return;const wa
   };
   rawRows.forEach(r=>expand(r));
   const m={},variants=[],seen=new Set(),seenVariant=new Set();let c=0,ph=0,ambiguous=0;
-  const sameVariant=(a,b)=>a&&b&&String(a[0]||'')===String(b[0]||'')&&String(a[2]||'')===String(b[2]||'')&&String(a[9]||'')===String(b[9]||'');
+  const sameVariant=(a,b)=>a&&b&&String(a[0]||'')===String(b[0]||'')&&String(a[2]||'')===String(b[2]||'')&&String(a[8]||'')===String(b[8]||'')&&String(a[9]||'')===String(b[9]||'');
   const put=(key,val)=>{if(!key)return;if(!m[key]){m[key]=val;return}const old=m[key];if(sameVariant(old,val)){if(!old[1]&&val[1])old[1]=val[1];return}m[key]=['','', '',old[3]||val[3]||'',old[4]||val[4]||'',old[5]||val[5]||'',old[6]||val[6]||'',old[7]||val[7]||'',old[8]||val[8]||'',''];ambiguous++};
   for(const r of rows){
    const bc=String(r.barcode||r.product_barcode||r.ean||r.gtin||'').trim(),sku=String(r.sku||r.product_sku||r.article||r.product_article||'').trim(),id=String(r.id||r.product_id||r.variant_id||r.product_variant_id||'').trim();
@@ -1835,10 +1847,10 @@ const _rn=render;render=function(){_rn();if(view==='out')saCard()};
 /* ---------- repair sales: compare saved sales with BILLZ per store + date ---------- */
 let rpPlan=null;
 function rpCompare({rows,map,moves:mv,from,to}){
- const bz={};rows.forEach(r=>{const st=map[r.shop_id]||r.shop_name||'',d=xDate(r.date);if(!st||!d||d<from||d>to)return;const k=d+'|'+st,o=bz[k]||(bz[k]={sold:0,net:0}),s=+r.sold_measurement_value||0,rt=+r.returned_measurement_value||0;o.sold+=s;o.net+=s-rt});
- const sy={};mv.forEach(x=>{if(x.del||x.type!=='out'||x.free)return;const d=mdate(x);if(!d||d<from||d>to)return;const k=d+'|'+x.from,o=sy[k]||(sy[k]={sold:0,net:0,ids:[]}),q=+x.qty||0;if(q>0)o.sold+=q;o.net+=q;o.ids.push(x._id)});
+ const bz={};rows.forEach(r=>{const st=map[r.shop_id]||r.shop_name||'',d=xDate(r.date);if(!st||!d||d<from||d>to)return;const k=d+'|'+st,o=bz[k]||(bz[k]={sold:0,returned:0,net:0});const sold=Math.max(0,Math.round(+r.sold_measurement_value||0)),returned=Math.max(0,Math.round(+r.returned_measurement_value||0));o.sold+=sold;o.returned+=returned;o.net+=sold-returned});
+ const sy={};mv.forEach(x=>{if(x.del||x.type!=='out'||x.free||!(x.note==='Billz sync'||String(x.bz||'').startsWith('nightly-sale|')))return;const d=mdate(x);if(!d||d<from||d>to)return;const k=d+'|'+x.from,o=sy[k]||(sy[k]={sold:0,returned:0,net:0,ids:[]}),q=+x.qty||0;if(q>0&&!x.ret)o.sold+=q;else if(q<0||x.ret)o.returned+=Math.abs(q);o.net+=q;o.ids.push(x._id)});
  const keys=[...new Set([...Object.keys(bz),...Object.keys(sy)])].sort();
- return keys.map(k=>{const a=sy[k]||{sold:0,net:0,ids:[]},b=bz[k]||{sold:0,net:0},[d,st]=k.split('|');return{d,st,sysSold:a.sold,sysNet:a.net,bzSold:b.sold,bzNet:b.net,diff:a.net-b.net,ids:a.ids}}).filter(o=>o.diff!==0);
+ return keys.map(k=>{const a=sy[k]||{sold:0,returned:0,net:0,ids:[]},b=bz[k]||{sold:0,returned:0,net:0},[d,st]=k.split('|');return{d,st,sysSold:a.sold,sysReturned:a.returned,sysNet:a.net,bzSold:b.sold,bzReturned:b.returned,bzNet:b.net,soldDiff:a.sold-b.sold,returnedDiff:a.returned-b.returned,netDiff:a.net-b.net,ids:a.ids}}).filter(o=>o.soldDiff!==0||o.returnedDiff!==0);
 }
 async function rpCheck(){
  if(bzBusy)return;const from=$('#rpf').value,to=$('#rpt').value||today(),m=$('#rpm'),out=$('#rpo'),go=$('#rpg');
@@ -1850,9 +1862,9 @@ async function rpCheck(){
   const list=rpCompare({rows,map,moves,from,to});
   rpPlan={from,to,list};
   if(!list.length){m.textContent='Everything matches BILLZ for '+from+' → '+to+'.';return}
-  const sysT=list.reduce((n,o)=>n+o.sysNet,0),bzT=list.reduce((n,o)=>n+o.bzNet,0);
-  m.textContent=list.length+' store-days differ. Stock Book has '+nf(sysT)+' net units on them, BILLZ has '+nf(bzT)+'.';
-  out.innerHTML='<div class="tw"><table class="sm"><thead><tr><th>Date</th><th>Store</th><th>Stock Book (net)</th><th>BILLZ (net)</th><th>Difference</th></tr></thead><tbody>'+list.slice(0,80).map(o=>'<tr class="r"><td>'+esc(o.d.split('-').reverse().join('.'))+'</td><td>'+esc(o.st)+'</td><td>'+nf(o.sysNet)+'</td><td>'+nf(o.bzNet)+'</td><td class="'+(o.diff>0?'bad':'')+'"><b>'+(o.diff>0?'+':'')+nf(o.diff)+'</b></td></tr>').join('')+'</tbody></table></div>'+(list.length>80?'<p class="mu">…and '+(list.length-80)+' more.</p>':'');
+  const soldDiff=list.reduce((n,o)=>n+o.soldDiff,0),returnDiff=list.reduce((n,o)=>n+o.returnedDiff,0);
+  m.textContent=list.length+' store-days differ. Across those days: sold difference '+nf(soldDiff)+', return difference '+nf(returnDiff)+'. Net-only checks could hide these mismatches.';
+  out.innerHTML='<div class="tw"><table class="sm"><thead><tr><th>Date</th><th>Store</th><th>Stock Book sold</th><th>BILLZ sold</th><th>Sold Δ</th><th>Stock Book returns</th><th>BILLZ returns</th><th>Return Δ</th></tr></thead><tbody>'+list.slice(0,80).map(o=>'<tr class="r"><td>'+esc(o.d.split('-').reverse().join('.'))+'</td><td>'+esc(o.st)+'</td><td>'+nf(o.sysSold)+'</td><td>'+nf(o.bzSold)+'</td><td class="'+(o.soldDiff?'bad':'')+'"><b>'+(o.soldDiff>0?'+':'')+nf(o.soldDiff)+'</b></td><td>'+nf(o.sysReturned)+'</td><td>'+nf(o.bzReturned)+'</td><td class="'+(o.returnedDiff?'bad':'')+'"><b>'+(o.returnedDiff>0?'+':'')+nf(o.returnedDiff)+'</b></td></tr>').join('')+'</tbody></table></div>'+(list.length>80?'<p class="mu">…and '+(list.length-80)+' more.</p>':'');
   go.hidden=false;go.disabled=false;
  }catch(e){m.textContent='Check failed: '+(e&&e.message||e)}
  finally{bzBusy=false;$('#rpc').disabled=false}
@@ -1860,7 +1872,7 @@ async function rpCheck(){
 async function rpFix(){
  if(bzBusy||!rpPlan||!rpPlan.list.length)return;
  const P=rpPlan,m=$('#rpm'),say=t=>{m.textContent=t},ids=P.list.flatMap(o=>o.ids),idset=new Set(ids);
- if(!confirm('Archive '+ids.length+' saved sales lines on '+P.list.length+' store-days and load those days again from BILLZ?\n\nA backup file of these lines downloads first. Archived lines stay in the Deleted tab.'))return;
+ if(!confirm('Archive '+ids.length+' BILLZ-synced sales lines on '+P.list.length+' store-days and load those days again from BILLZ? Manual sales are not changed.\n\nA backup file of these lines downloads first. Archived lines stay in the Deleted tab.'))return;
  bzBusy=true;$('#rpc').disabled=true;$('#rpg').disabled=true;let started=false;
  try{
   const bk=new Blob([JSON.stringify({format:'Stock Book sales repair backup',exportedAt:new Date().toISOString(),records:moves.filter(x=>idset.has(x._id))})],{type:'application/json'}),a=document.createElement('a');
@@ -2074,7 +2086,8 @@ document.addEventListener('click',e=>{const t=e.target;
  if(!t.closest('#fly,.nb[data-n="user"]'))$('#fly').hidden=true;
  if(t.matches('img.pic')){t.classList.toggle('big');return}
  const th=t.closest('[data-th],[data-dn],[data-sh],[data-fx],[data-lang]');if(th){if(th.dataset.th)setTheme(th.dataset.th,true);if(th.dataset.dn)setLook('dens',th.dataset.dn);if(th.dataset.sh)setLook('shape',th.dataset.sh);if(th.dataset.fx)setLook('fx',th.dataset.fx);if(th.dataset.lang)setLanguage(th.dataset.lang);$('#fly').innerHTML=flyHtml();return}
- if(t.closest('#lo')){signOut(auth);return}
+ if(t.closest('#lo-all')){const b=t.closest('#lo-all');if(b)b.disabled=true;(async()=>{try{const user=auth.currentUser;if(!user)throw new Error('No active account.');const token=await user.getIdToken(),r=await fetch('/.netlify/functions/revoke-sessions',{method:'POST',headers:{Authorization:'Bearer '+token}}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Server could not revoke sessions.');await signOut(auth)}catch(err){console.error('Stock Book all-device sign-out failed:',err);const loginErr=$('#le');if(loginErr)loginErr.textContent='Could not log out other devices: '+(err&&err.message||'check Render setup');if(b)b.disabled=false}})();return}
+ if(t.closest('#lo')){const b=t.closest('#lo');if(b)b.disabled=true;signOut(auth).catch(err=>{console.error('Stock Book sign-out failed:',err);const loginErr=$('#le');if(loginErr)loginErr.textContent='Could not log out: '+(err&&err.message||'check your connection');if(b)b.disabled=false});return}
  if(t.id==='dlg'||t.closest('[data-dcancel]')){dg=null;renderDlg();return}
  if(t.closest('#dgo')){doDel();return}
  if(t.closest('#rcsv')){repCsv();return}
@@ -2533,7 +2546,10 @@ onAuthStateChanged(auth,async u=>{
   }
  }catch(err){console.warn('Local Stock Book cache unavailable:',err);}
  if(epoch!==_authEpoch||!auth.currentUser||auth.currentUser.uid!==u.uid)return;
- _snapshotUnsub=onSnapshot(collection(fs,'moves'),snap=>{
+ _snapshotUnsub=onSnapshot(collection(fs,'moves'),async snap=>{
+  // A server-written marker lets already-open sessions on other devices sign out immediately.
+  const revokeDoc=snap.docs.find(d=>d.id==='auth_revoke_'+u.uid);
+  if(revokeDoc){const revokedAt=Number(revokeDoc.data().authSessionRevokedAtMs)||0;if(revokedAt){try{const tokenInfo=await u.getIdTokenResult(),authAt=Date.parse(tokenInfo.authTime||'')||0;if(authAt&&authAt<=revokedAt){const loginErr=$('#le');if(loginErr)loginErr.textContent='This account was logged out from all devices. Please sign in again.';await signOut(auth);return}}catch(e){console.warn('Could not check remote session revocation:',e)}}}
   if(!_snapshotReady){
    _movesById.clear();
    snap.docs.forEach(d=>_movesById.set(d.id,{...d.data(),_id:d.id}));

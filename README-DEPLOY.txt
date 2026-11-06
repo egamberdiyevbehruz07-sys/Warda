@@ -2,8 +2,8 @@ STOCK BOOK — DEPLOY
 
 1. Back up the current Netlify deploy.
 2. Deploy all files from this ZIP, including netlify/functions, netlify/lib, netlify.toml and package.json.
-3. Keep BILLZ_INT_KEY_2 configured as a Netlify secret (BILLZ_INT_KEY and BILLZ_SECRET are legacy fallbacks).
-4. For automatic Telegram delivery, configure TELEGRAM_BOT_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and the existing BILLZ_INT_KEY_2 (or supported legacy BILLZ key) for Netlify Functions in Production. FIREBASE_SERVICE_ACCOUNT_JSON is not required by the Telegram reporting functions in this build.
+3. Keep an existing BILLZ key configured as a Render secret. Supported names are BILLZ_INT_KEY_2, BILLZ_INT_KEY, BILLZ_TME_KEY and legacy BILLZ_SECRET.
+4. For automatic Telegram delivery, configure TELEGRAM_BOT_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and the existing BILLZ key (BILLZ_INT_KEY_2, BILLZ_INT_KEY, BILLZ_TME_KEY or supported legacy BILLZ_SECRET) for Netlify Functions in Production. FIREBASE_SERVICE_ACCOUNT_JSON is not required by the Telegram reporting functions in this build.
 5. Run SUPABASE-TELEGRAM-SCHEMA.sql in the existing Supabase project. The scheduled function fetches the day's report data directly from BILLZ, stores a compact snapshot in Supabase and sends the Telegram report at 17:30 UTC = 22:30 Asia/Tashkent. It does not read or write Firestore.
 6. In Stock Book > Report > Telegram daily report, select the Telegram chat, enable automatic reports, save and send a test. Run “Send selected day now” once to verify a real report.
 7. If the BILLZ fetch or Supabase archive fails, the scheduled function logs the failure and does not send an unverified/partial report; check Netlify function logs.
@@ -49,3 +49,10 @@ SCHEDULED TELEGRAM REPORT TIMEOUT FIX
 - The background function performs the BILLZ sync, saves the snapshot to Supabase, then sends the report and product photo albums to the saved Telegram group.
 - No new environment variable is required; the existing TELEGRAM_BOT_TOKEN is used server-side to authorize the internal dispatch.
 - After deployment, check Functions for daily-telegram-report-background and its logs. A successful scheduled log should say the background job was accepted; the background function logs the sync and delivery outcome.
+
+
+ALL-DEVICE LOGOUT (OPTIONAL)
+- This build includes a server-side Log out all devices action. It requires `FIREBASE_SERVICE_ACCOUNT_JSON` in the existing Render environment.
+- Use a newly rotated service-account key for Firebase project `system-proof`; do not reuse a key that may have been exposed. Store it only in Render Environment, never in GitHub or chat.
+- The package adds the `firebase-admin` dependency. Render must run `npm install` before `node server.mjs`. If the service build command is empty, set it to `npm install`.
+- If this variable is not configured, single-device Log out continues to work and Log out all devices shows a clear setup warning.

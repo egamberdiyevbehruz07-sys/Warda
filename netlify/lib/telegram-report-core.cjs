@@ -517,8 +517,8 @@ function webhookSecret() { return require('crypto').createHash('sha256').update(
 let catalogMemo = null; // the catalog (11k+ products) is slow to read, so a warm server reuses it for 10 minutes
 async function collectBillz(rangeFrom, rangeTo, opts = {}) {
   // Fetches sales / imports / write-offs for rangeFrom..rangeTo (inclusive, YYYY-MM-DD) directly from BILLZ.
-  const secret = process.env.BILLZ_INT_KEY_2 || process.env.BILLZ_INT_KEY || process.env.BILLZ_SECRET;
-  if (!secret) throw new Error('BILLZ_INT_KEY_2 (or BILLZ_INT_KEY / BILLZ_SECRET) is missing.');
+  const secret = process.env.BILLZ_INT_KEY_2 || process.env.BILLZ_INT_KEY || process.env.BILLZ_TME_KEY || process.env.BILLZ_SECRET;
+  if (!secret) throw new Error('BILLZ_INT_KEY_2, BILLZ_INT_KEY, BILLZ_TME_KEY or BILLZ_SECRET is missing.');
   const API = 'https://api-admin.billz.ai';
   const PLATFORM_ID = '7d4a4c38-dd84-4902-b744-0488b80a4c01';
   const login = await fetch(API + '/v1/auth/login', {
