@@ -25,3 +25,10 @@ The bot asks BILLZ for that date in 3 ways and replies with rows / sold / return
   A) the way the system and the reports ask now (day + position)   B) day only   C) whole period total
 Compare with the "Tovarlar" number in BILLZ for the same date. If A is much larger than B/BILLZ, the report setting is inflating;
 if A = B = BILLZ, BILLZ is fine and the extra numbers come from the data saved inside the Stock Book system.
+
+SALES REPAIR + AUTO-SYNC LOCK (index.html)
+- Stock Book > BILLZ > Advanced BILLZ tools > "Repair sales: compare with BILLZ and remove duplicates".
+  Pick dates > "Check (nothing changes)" lists every store-day where saved sales differ from BILLZ.
+  "Fix the differences" downloads a backup, archives the saved lines of those store-days (kept in Deleted) and loads BILLZ again.
+- The 10-minute auto-sync now takes a lock so only one browser starts it at a time.
+- NETLIFY CREDITS: every production deploy and every long background run uses credits. Deploy this ZIP ONCE, not repeatedly.

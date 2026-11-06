@@ -57,7 +57,7 @@ export default async function telegramBot(request) {
             : `🔒 Bu chat hali ulanmagan.\nChat ID: <code>${chat.id}</code>\n\nStock Book > Report > Telegram delivery bo‘limida shu guruhni tanlab saqlang, so‘ng /start yuboring.` });
         return ok();
       }
-      await core.sendMenu(token, chat.id, '0', 'Hisobot dashboardda: kunlik, haftalik va oylik. Pastdagi tugmani bosing.');
+      await core.sendMenu(token, chat.id, '0', Number(chat.id) > 0 ? 'Dashboardni oching yoki hisobotni tanlang:' : undefined);
       return ok();
     }
 

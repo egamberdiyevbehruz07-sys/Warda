@@ -14,7 +14,7 @@ function getSupabaseConfig() {
 async function supabaseRequest(path, options = {}) {
   const cfg = getSupabaseConfig();
   if (!cfg) return null;
-  const doFetch = () => fetch(cfg.url + '/rest/v1/' + path, {
+  const response = await fetch(cfg.url + '/rest/v1/' + path, {
     method: options.method || 'GET',
     headers: {
       apikey: cfg.key,
@@ -24,13 +24,8 @@ async function supabaseRequest(path, options = {}) {
       ...(options.headers || {})
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    signal: AbortSignal.timeout(options.timeoutMs || 20000)
+    signal: AbortSignal.timeout(options.timeoutMs || 12000)
   });
-  let response;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { response = await doFetch(); break; }
-    catch (e) { if (attempt === 1) throw new Error('Supabase did not answer (' + cut(String((e && e.message) || e), 120) + ').'); await new Promise(ok => setTimeout(ok, 1500)); }
-  }
   const body = await response.text();
   if (!response.ok) throw new Error('Supabase request failed (' + response.status + '): ' + cut(body || response.statusText, 350));
   if (!body) return null;
@@ -401,10 +396,23 @@ function dashboardRow(chatId) {
   return [{ text: '📊 Dashboard (shaxsiy chatda)', url: `https://t.me/${bot}?start=dash` }];
 }
 function menuKeyboard(period = '0', chatId) {
-  return { inline_keyboard: [dashboardRow(chatId === undefined ? -1 : chatId)] };
+  const p = normPeriod(period);
+  const mark = (k, t) => ({ text: (p === k ? '● ' : '') + t, callback_data: 'p:' + k });
+  const btn = s => ({ text: s.name, callback_data: `r:${s.key}:${p}` });
+  return { inline_keyboard: [
+    ...(chatId !== undefined ? [dashboardRow(chatId)] : []),
+    [mark('0', 'Bugun'), mark('1', 'Kecha')],
+    [mark('7', 'Oxirgi 7 kun'), mark('m', 'O‘tgan oy')],
+    [{ text: '📊 Umumiy hisobot', callback_data: `r:all:${p}` }],
+    [{ text: '📈 Hafta taqqoslash', callback_data: 'c:w' }, { text: '📈 Oy taqqoslash', callback_data: 'c:m' }],
+    [btn(STORE_MENU[0]), btn(STORE_MENU[1])],
+    [btn(STORE_MENU[2]), btn(STORE_MENU[3])]
+  ] };
 }
-function menuText(period = '0', intro = 'Hisobot dashboardda: kunlik, haftalik va oylik.') {
-  return `📊 <b>HISOBOT</b>\n\n${intro}`;
+function menuText(period = '0', intro = 'Davrni va hisobotni tanlang:') {
+  const r = rangeForPeriod(normPeriod(period));
+  const when = r.from === r.to ? fmtDate(r.to) : `${fmtDate(r.from)} – ${fmtDate(r.to)}`;
+  return `📋 <b>HISOBOTLAR MENYUSI</b>\n📅 Davr: <b>${esc(r.short)}</b> (${when})\n\n${intro}`;
 }
 async function sendMenu(token, chatId, period = '0', intro) {
   return telegram('sendMessage', token, { chat_id: chatId, text: menuText(period, intro), parse_mode: 'HTML', reply_markup: menuKeyboard(period, chatId) });
@@ -539,18 +547,12 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
     const wait = Math.max(0, 450 - (Date.now() - lastBillzRequestAt)); if (wait) await new Promise(ok => setTimeout(ok, wait)); lastBillzRequestAt = Date.now();
     const u = new URL(API + path);
     for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, Array.isArray(v) ? v.join(',') : String(v));
-    let r, lastErr;
-    for (let attempt = 0; attempt < 6; attempt++) {
-      try {
-        r = await fetch(u, { headers: { Authorization: 'Bearer ' + token, 'platform-id': PLATFORM_ID }, signal: AbortSignal.timeout(45000) });
-        lastErr = null;
-        if (r.status !== 429 && r.status < 500) break;
-      } catch (e) { // timeout or dropped connection: try again instead of failing the whole build
-        lastErr = e; r = null;
-      }
-      if (attempt < 5) await new Promise(ok => setTimeout(ok, Math.min(8000, 800 * (2 ** attempt))));
+    let r;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      r = await fetch(u, { headers: { Authorization: 'Bearer ' + token, 'platform-id': PLATFORM_ID }, signal: AbortSignal.timeout(20000) });
+      if (r.status !== 429 && r.status < 500) break;
+      if (attempt < 4) await new Promise(ok => setTimeout(ok, Math.min(5000, 450 * (2 ** attempt))));
     }
-    if (!r) throw new Error('BILLZ ' + path + ' did not answer after several tries (' + cut(String((lastErr && lastErr.message) || lastErr), 120) + ').');
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error('BILLZ ' + path + ' failed (' + r.status + '): ' + cut(body.message || body.error || 'API error', 200));
     return body && body.data && typeof body.data === 'object' && !Array.isArray(body.data) && !body.rows && !body.shops && !body.Items && !body.items && !body.transfer && !body.products_stats_by_date ? body.data : body;
@@ -590,10 +592,7 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
   const dateOnly = value => {
     if (!value) return '';
     const str = String(value);
-    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*(Z|[+-]\d{2}:?\d{2})$/i.test(str)) { const d0 = new Date(str); if (Number.isFinite(d0.getTime())) { const q = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d0).map(x => [x.type, x.value])); return `${q.year}-${q.month}-${q.day}`; } }
-      return str.slice(0, 10);
-    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
     const d = new Date(value); if (!Number.isFinite(d.getTime())) return '';
     const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d).map(x => [x.type, x.value]));
     return `${p.year}-${p.month}-${p.day}`;
@@ -750,17 +749,6 @@ function rangeForPeriod(period) {
 const dayCount = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1;
 
 // Small cache so several taps (overall + 4 stores) fetch BILLZ only once. Needs stock_book_range_cache; skipped if missing.
-// Returns '' when the dashboard's storage (Supabase) works, otherwise a plain-language problem description.
-async function cacheSelfTest() {
-  try {
-    if (!getSupabaseConfig()) return 'Supabase is not configured: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are missing in the Netlify environment variables (Site configuration > Environment variables). The dashboard has nowhere to store its data.';
-    const stamp = String(Date.now());
-    await cacheSet('dash-selftest', { stamp });
-    const hit = await cacheGet('dash-selftest');
-    if (!hit || !hit.payload || hit.payload.stamp !== stamp) return 'Supabase did not return the value that was just saved. Check that SUPABASE-TELEGRAM-SCHEMA.sql was run and that the service-role key is correct.';
-    return '';
-  } catch (e) { return 'Supabase storage error: ' + cut(String((e && e.message) || e), 260); }
-}
 async function cacheGet(key) {
   try { const r = await supabaseRequest('stock_book_range_cache?key=eq.' + encodeURIComponent(key) + '&select=payload,updated_at'); return Array.isArray(r) && r[0] ? r[0] : null; } catch (_) { return null; }
 }
@@ -821,20 +809,13 @@ function shiftMonth(key, delta) { const [y, m] = key.split('-').map(Number); ret
 function monthLabel(key) { return MONTHS_UZ[Number(key.slice(5, 7)) - 1] + ' ' + key.slice(0, 4); }
 function currentMonthKey() { return todayTashkent().slice(0, 7); }
 const isWeekKey = k => /^w:\d{4}-\d{2}-\d{2}$/.test(String(k));
-const isDayKey = k => /^d:\d{4}-\d{2}-\d{2}$/.test(String(k));
 function validMonth(k) {
   k = String(k); const today = todayTashkent();
-  if (isWeekKey(k) || isDayKey(k)) { const to = k.slice(2); return !Number.isNaN(Date.parse(to)) && to <= today && to >= shiftDate(today, -400); }
+  if (isWeekKey(k)) { const to = k.slice(2); return !Number.isNaN(Date.parse(to)) && to <= today && to >= shiftDate(today, -400); }
   const cur = currentMonthKey(); return /^\d{4}-(0[1-9]|1[0-2])$/.test(k) && k <= cur && k >= shiftMonth(cur, -24);
 }
 const ddmm = d => d.slice(8, 10) + '.' + d.slice(5, 7);
 function dashLabels(key) {
-  if (isDayKey(key)) {
-    const d = key.slice(2), today = todayTashkent(), full = `${ddmm(d)}.${d.slice(0, 4)}`;
-    if (d === today) return { kind: 'day', label: `Bugun (${full})`, short: 'Bugun', loc: 'Bugun', dat: 'bugun' };
-    if (d === shiftDate(today, -1)) return { kind: 'day', label: `Kecha (${full})`, short: 'Kecha', loc: 'Kecha', dat: 'kecha' };
-    return { kind: 'day', label: full, short: ddmm(d), loc: full, dat: full };
-  }
   if (isWeekKey(key)) {
     const to = key.slice(2), from = shiftDate(to, -6), today = todayTashkent(), rng = `${ddmm(from)}–${ddmm(to)}`, ago = Math.round((Date.parse(today) - Date.parse(to)) / 86400000);
     if (ago === 0) return { kind: 'week', label: `Oxirgi 7 kun (${rng})`, short: 'Oxirgi 7 kun', loc: 'Oxirgi 7 kunda', dat: 'oxirgi 7 kunga' };
@@ -846,10 +827,8 @@ function dashLabels(key) {
 }
 function dashOptions() { const cur = currentMonthKey(); return Array.from({ length: 13 }, (_, i) => { const k = shiftMonth(cur, -i); return { key: k, label: monthLabel(k) + (i === 0 ? ' (hozirgacha)' : '') }; }); }
 function dashWeekOptions() { const today = todayTashkent(); return Array.from({ length: 12 }, (_, i) => { const key = 'w:' + shiftDate(today, -7 * i); return { key, label: dashLabels(key).short }; }); }
-function dashDayOptions() { const today = todayTashkent(); return Array.from({ length: 31 }, (_, i) => { const key = 'd:' + shiftDate(today, -i); return { key, label: dashLabels(key).label }; }); }
-function dashDefaults() { const cur = currentMonthKey(), today = todayTashkent(); return { d: 'd:' + today, wa: 'w:' + today, a: Number(today.slice(8, 10)) <= 5 ? shiftMonth(cur, -1) : cur }; }
+function dashDefaults() { const cur = currentMonthKey(), today = todayTashkent(); return { a: shiftMonth(cur, -1), b: shiftMonth(cur, -2), wa: 'w:' + today, wb: 'w:' + shiftDate(today, -7) }; }
 function monthRange(key) {
-  if (isDayKey(key)) { const d = key.slice(2); return { key, from: d, to: d, partial: d === todayTashkent(), fullDays: 1, days: 1 }; }
   if (isWeekKey(key)) { const to = key.slice(2); return { key, from: shiftDate(to, -6), to, partial: to === todayTashkent(), fullDays: 7, days: 7 }; }
   const [y, m] = key.split('-').map(Number), fullDays = new Date(Date.UTC(y, m, 0)).getUTCDate(), today = todayTashkent();
   const partial = key === today.slice(0, 7), from = key + '-01', to = partial ? today : key + '-' + String(fullDays).padStart(2, '0');
@@ -886,19 +865,8 @@ async function dashBuild(monthKey) {
     const { rows, daily } = await collectBillz(r.from, r.to);
     const payload = summarizeMonth(r, rows, daily);
     await cacheSet('dash:' + monthKey, payload);
-    await cacheSet('dasherr:' + monthKey, { msg: '', at: 0 }).catch(() => {});
     return payload;
-  } catch (e) {
-    const msg = cut('Could not build ' + monthKey + ': ' + String((e && e.message) || e), 280);
-    await cacheSet('dasherr:' + monthKey, { msg, at: Date.now() }).catch(() => {});
-    throw e;
   } finally { await cacheSet('dashbuild:' + monthKey, { at: 0 }); }
-}
-// Last build error for a period (kept for 15 minutes), so the dashboard can show it instead of loading forever.
-async function dashError(monthKey) {
-  const hit = await cacheGet('dasherr:' + monthKey).catch(() => null);
-  const p = hit && hit.payload;
-  return p && p.msg && Date.now() - Number(p.at || 0) < 15 * 60 * 1000 ? String(p.msg) : '';
 }
 async function dashGet(monthKey) {
   const hit = await cacheGet('dash:' + monthKey);
@@ -914,7 +882,7 @@ async function dashClaimBuilds(months, force) {
     const { fresh } = await dashGet(m);
     if (fresh && !force) continue;
     const mk = await cacheGet('dashbuild:' + m);
-    if (mk && mk.payload && Date.now() - Number(mk.payload.at || 0) < 4 * 60 * 1000) continue;
+    if (mk && mk.payload && Date.now() - Number(mk.payload.at || 0) < 8 * 60 * 1000) continue;
     await cacheSet('dashbuild:' + m, { at: Date.now() });
     todo.push(m);
   }
@@ -993,15 +961,15 @@ async function billzSalesDiag({ from, to, fetchRows, shopNameById, shopIds }) {
   for (const [id, label, params] of variants) {
     try {
       const rows = await fetchRows('/v1/product-general-table', params, ['products_stats_by_date', 'products', 'items', 'rows'], 100);
-      let sold = 0, ret = 0; const dates = {}, shops = {}, prods = {}, rawDates = new Set();
+      let sold = 0, ret = 0; const dates = {}, shops = {}, prods = {};
       for (const r of rows) {
         const s = Math.max(0, Number(r.sold_measurement_value) || 0), rt = Math.max(0, Number(r.returned_measurement_value) || 0);
         sold += s; ret += rt;
-        if (rawDates.size < 3) rawDates.add(String(r.date || '')); const d = String(r.date || '').slice(0, 10) || '(sanasiz)'; dates[d] = (dates[d] || 0) + 1;
+        const d = String(r.date || '').slice(0, 10) || '(sanasiz)'; dates[d] = (dates[d] || 0) + 1;
         const sh = shopNameById.get(String(r.shop_id)) || String(r.shop_name || r.shop_id || '?'); shops[sh] = (shops[sh] || 0) + s;
         const pn = String(r.product_base_name || r.product_name || '?'); prods[pn] = (prods[pn] || 0) + s;
       }
-      out.push({ id, label, rows: rows.length, sold, ret, dates, rawDates: [...rawDates], shops, top: Object.entries(prods).sort((a, b) => b[1] - a[1]).slice(0, 5), keys: rows[0] ? Object.keys(rows[0]).slice(0, 45) : [] });
+      out.push({ id, label, rows: rows.length, sold, ret, dates, shops, top: Object.entries(prods).sort((a, b) => b[1] - a[1]).slice(0, 5), keys: rows[0] ? Object.keys(rows[0]).slice(0, 45) : [] });
     } catch (e) { out.push({ id, label, error: cut(e.message, 160) }); }
   }
   return out;
@@ -1015,7 +983,7 @@ async function sendSalesCheck(chatId, date) {
     for (const v of out) {
       if (v.error) { lines.push(`<b>${v.id})</b> ${esc(v.label)}: xato — ${esc(v.error)}`); continue; }
       const dts = Object.entries(v.dates).sort().slice(0, 6).map(([d, c]) => `${d.slice(8, 10)}.${d.slice(5, 7)}: ${c}`).join(', ');
-      lines.push(`<b>${v.id})</b> ${esc(v.label)}`, `   qatorlar: ${v.rows} · sotildi: <b>${n(v.sold)}</b> · qaytarildi: ${n(v.ret)}`, `   sanalar (qator soni): ${esc(dts || '—')}`, `   xom sana (BILLZ): ${esc((v.rawDates || []).join(' | ') || '—')}`);
+      lines.push(`<b>${v.id})</b> ${esc(v.label)}`, `   qatorlar: ${v.rows} · sotildi: <b>${n(v.sold)}</b> · qaytarildi: ${n(v.ret)}`, `   sanalar (qator soni): ${esc(dts || '—')}`);
     }
     const A = out.find(x => x.id === 'A' && !x.error);
     if (A) lines.push('', 'Do‘konlar (A): ' + Object.entries(A.shops).map(([s, q]) => `${esc(s)} ${n(q)}`).join(' · '), 'Top 5 (A): ' + A.top.map(([nm, q]) => `${esc(cut(nm, 22))} ${n(q)}`).join(' · '), 'Maydonlar (A): ' + esc(cut(A.keys.join(', '), 330)));
@@ -1031,5 +999,5 @@ async function sendSalesCheck(chatId, date) {
 async function wasMonthlySent(monthKey) { const r = await cacheGet('monthly-sent:' + monthKey); return !!r; }
 async function markMonthlySent(monthKey) { await cacheSet('monthly-sent:' + monthKey, { sentAt: new Date().toISOString() }); }
 
-module.exports = { cacheSelfTest, dashError, dashboardRow, dashDayOptions, isDayKey, sendSalesCheck, sendCompareView, dashLabels, dashWeekOptions, cacheGet, cacheSet, shiftMonth, monthLabel, validMonth, dashOptions, dashDefaults, dashBuild, dashGet, dashClaimBuilds, summarizeMonth, monthRange, verifyInitData, isAuthorizedUser, rangeForPeriod, wasMonthlySent, markMonthlySent, getTelegramToken, todayTashkent, telegram, sendDailyReport, syncBillzToday, saveTelegramSettings, getTelegramSettings,
+module.exports = { sendSalesCheck, sendCompareView, dashLabels, dashWeekOptions, cacheGet, cacheSet, shiftMonth, monthLabel, validMonth, dashOptions, dashDefaults, dashBuild, dashGet, dashClaimBuilds, summarizeMonth, monthRange, verifyInitData, isAuthorizedUser, rangeForPeriod, wasMonthlySent, markMonthlySent, getTelegramToken, todayTashkent, telegram, sendDailyReport, syncBillzToday, saveTelegramSettings, getTelegramSettings,
   wasNightlySent, markNightlySent, sendMenu, menuText, menuKeyboard, dateForPeriod, sendReportView, recordSeenChat, listSeenChats, isAuthorizedChat, webhookSecret, STORE_MENU };

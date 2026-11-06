@@ -38,29 +38,17 @@ export default async function dailyTelegramReportBackground(request) {
       }
       return;
     }
-    if (job.trigger === 'dashwarm') {
-      // Refresh the dashboard summaries people open most. The month is rebuilt at most every 3 hours.
-      const today = core.todayTashkent();
-      const keys = ['d:' + today, 'w:' + today];
-      const mk = today.slice(0, 7), hit = await core.cacheGet('dash:' + mk).catch(() => null);
-      const age = hit && hit.payload && hit.payload.meta ? Date.now() - Date.parse(hit.payload.meta.built) : Infinity;
-      if (age > 3 * 60 * 60 * 1000) keys.push(mk);
-      for (const k of keys.filter(core.validMonth)) {
-        try { await core.dashBuild(k); console.log('Dashboard warm-up built:', k, 'after', Date.now() - startedAt, 'ms'); }
-        catch (e) { console.error('Dashboard warm-up failed:', k, String(e && e.message)); }
-      }
-      return;
-    }
     if (job.trigger === 'monthly') {
-      // 1st of the month: build last month's summary for the dashboard and post ONE short message with the dashboard button.
+      // 1st of the month: send last month's overall report to the saved group.
       const cfg = await core.getTelegramSettings();
       if (!cfg || !cfg.chatId || cfg.enabled === false) { console.log('Monthly report skipped: no saved group or reports paused.'); return; }
       const range = core.rangeForPeriod('m');
       if (await core.wasMonthlySent(range.monthKey)) { console.log('Monthly report already sent for', range.monthKey); return; }
-      try { await core.dashBuild(range.monthKey); } catch (e) { console.error('Monthly dashboard build failed:', String(e && e.message)); }
-      await core.telegram('sendMessage', core.getTelegramToken(), { chat_id: cfg.chatId, parse_mode: 'HTML', text: `📅 <b>${core.monthLabel(range.monthKey)} — oylik hisobot tayyor</b>\nDashboard › Oylik bo‘limida oching.`, reply_markup: { inline_keyboard: [core.dashboardRow(cfg.chatId)] } });
+      const result = await core.sendReportView({ chatId: cfg.chatId, scope: 'all', period: 'm' });
       await core.markMonthlySent(range.monthKey);
-      console.log('Monthly notice sent for', range.monthKey, 'after', Date.now() - startedAt, 'ms');
+      try { await core.sendCompareView(cfg.chatId, 'm'); } catch (e) { console.error('Monthly comparison failed:', String(e && e.message)); }
+      for (const m of [range.monthKey, core.shiftMonth(range.monthKey, -1)]) { try { await core.dashBuild(m); } catch (e) { console.error('Dashboard pre-build failed:', m, String(e && e.message)); } }
+      console.log('Monthly report sent:', JSON.stringify({ ...result, durationMs: Date.now() - startedAt }));
       return;
     }
     if (job.trigger !== 'manual' || job.refresh === true) {
@@ -71,16 +59,6 @@ export default async function dailyTelegramReportBackground(request) {
       console.log('Manual send: using the saved Supabase report snapshot.');
     }
 
-    if (job.trigger === 'scheduled' || job.trigger === 'retry') {
-      // No automatic group report any more: the group uses the dashboard. Keep today's data fresh for it.
-      const today = job.date || core.todayTashkent();
-      for (const k of ['d:' + today, 'd:' + core.dashDayOptions()[1].key.slice(2), 'w:' + today, today.slice(0, 7)].filter(core.validMonth)) {
-        try { await core.dashBuild(k); } catch (e) { console.error('Dashboard pre-build failed:', k, String(e && e.message)); }
-      }
-      await core.markNightlySent(today);
-      console.log('Nightly sync done; group report is disabled (dashboard only). After', Date.now() - startedAt, 'ms');
-      return;
-    }
     console.log('Step 2/2: sending daily report and product photo albums to saved Telegram group.');
     const result = await core.sendDailyReport({ date: job.date, force: true, refresh: false, markNightly: job.trigger === 'scheduled' || job.trigger === 'retry' });
     console.log('Telegram daily report completed:', JSON.stringify({

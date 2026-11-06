@@ -597,15 +597,16 @@ html[data-fx="off"] :is(.stile,.dr-fin-card):hover{transform:none}
  <details class="card" id="bzadvanced">
   <summary style="cursor:pointer;font-weight:750;padding:4px 0">Advanced BILLZ tools</summary>
   <p class="mu">These are separate diagnostic or maintenance actions. You usually do not need them for a normal daily sync.</p>
-  <div class="xl" style="margin-top:10px;flex-wrap:wrap"><button class="btn" id="bzpb">Sync product catalog only</button><button class="btn" id="bzck">Compare stock with BILLZ</button><button class="btn dng" id="bzrs">Repair BILLZ data (remove duplicates)</button><button class="btn" id="bzsum">Show what is saved (by day)</button></div>
-  <div style="margin-top:14px;border:1px solid var(--bd);border-radius:10px;padding:12px">
-    <b>Wipe everything and re-sync from the start</b> <span class="mu" style="font-size:11px">(version v5)</span>
-    <p class="mu" style="margin:6px 0">Refreshes the BILLZ catalog, <b>permanently deletes all stock movements</b> (imports, transfers, sales, write-offs, logs), loads BILLZ stock from the day before the start date as opening stock, then syncs imports, transfers, write-offs and sales once from the start date.</p>
-    <div class="row3"><div><label>Start date</label><input id="bzws" type="date"></div></div>
-    <div class="xl" style="margin-top:10px"><button class="btn dng" id="bzwipe">Wipe everything and re-sync</button></div>
-   </div>
-   <p class="mu" id="bzpo" style="margin-top:8px" aria-live="polite"></p>
+  <div class="xl" style="margin-top:10px;flex-wrap:wrap"><button class="btn" id="bzpb">Sync product catalog only</button><button class="btn" id="bzck">Compare stock with BILLZ</button></div>
+  <p class="mu" id="bzpo" style="margin-top:8px" aria-live="polite"></p>
   <div id="bzout"></div>
+  <details style="margin-top:16px;border-top:1px solid var(--bd);padding-top:12px">
+   <summary style="cursor:pointer;font-weight:750">Repair sales: compare with BILLZ and remove duplicates</summary>
+   <p class="mu">Compares the sales saved in Stock Book with BILLZ for every store and date. Where a day is different, the saved copies of that store-day are archived (they stay in Deleted and in a backup file that downloads first) and BILLZ sales are loaded again.</p>
+   <div class="row3" style="margin-top:10px"><div><label>From</label><input id="rpf" type="date"></div><div><label>To</label><input id="rpt" type="date"></div></div>
+   <div class="xl" style="margin-top:12px"><button class="btn" id="rpc">Check (nothing changes)</button><button class="btn pri" id="rpg" hidden>Fix the differences</button></div>
+   <p class="mu" id="rpm" style="margin-top:8px" aria-live="polite"></p><div id="rpo"></div>
+  </details>
   <details style="margin-top:16px;border-top:1px solid var(--bd);padding-top:12px">
    <summary style="cursor:pointer;font-weight:750">Careful: start fresh from BILLZ</summary>
    <p class="mu">Clean rebuild for a new BILLZ account: first refresh the complete BILLZ catalog, then archive active stock movements (they remain in Deleted), load BILLZ stock as the opening balance, and re-sync transactions from your chosen date. A full JSON backup including product photos is downloaded first. Existing catalog settings and non-stock records are kept. Review the preview before continuing.</p>
@@ -663,7 +664,7 @@ html[data-fx="off"] :is(.stile,.dr-fin-card):hover{transform:none}
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,doc,writeBatch,onSnapshot,getDoc,runTransaction} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,collection,doc,writeBatch,onSnapshot,getDoc} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig={apiKey:"AIzaSyAqFp2SG979LRDAFDCXfrhbam3eA8vtsbA",authDomain:"system-proof.firebaseapp.com",projectId:"system-proof",storageBucket:"system-proof.firebasestorage.app",messagingSenderId:"398851511707",appId:"1:398851511707:web:b6e00db7bd409f074ebd3e"};
 const DOM='@stockbook.app',STORES=["Warda","Amani","Afiya noor","Warda 2"];
@@ -756,7 +757,6 @@ const meta=s=>[s.sku||s.art,s.brand,s.color,s.size].filter(Boolean).map(esc).joi
 const pick=s=>Object.fromEntries(FL.map(f=>[f,s[f]||'']));
 const say=(sel,t,b)=>{const m=$(sel);m.textContent=t;m.className=b?'bad':'mu'};
 
-let bzQuiet=false,bzQuietEnd=()=>{bzQuiet=false;try{_renderModelSource=null;populateDatalists();if(view!=='bz')render()}catch(e){console.warn(e)}};
 let tmode='move',auth,fs,me='',unsubs=[],moves=[],STK={},TREE=[],view='cat',prevView='cat';
 const lo=STORES.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
 ['#tfrom','#tto','#istore'].forEach(s=>$(s).innerHTML=lo);$('#istore').insertAdjacentHTML('afterbegin','<option value="">Choose a store</option>');$('#istore').value='';$('#tto').value=STORES[1]||STORES[0];$('#idt').value=today();
@@ -918,7 +918,7 @@ async function commit(recs,quiet){const fp=fpOf(recs),dup=moves.find(m=>m.fp===f
  const base=Date.now();
  // Keep each Firestore request small; large Billz date ranges can contain many sales rows.
  for(let i=0;i<recs.length;i+=100){const w=writeBatch(fs);
-  recs.slice(i,i+100).forEach((r,j)=>{const{_id:fixed,...data}=r;w.set(doc(fs,'moves',fixed||('g'+base+'_'+(i+j)+Math.random().toString(36).slice(2,5))),{photo:null,br:null,by:me,...data,fp,ts:base+i+j})});
+  recs.slice(i,i+100).forEach((r,j)=>w.set(doc(fs,'moves','g'+base+'_'+(i+j)+Math.random().toString(36).slice(2,5)),{photo:null,br:null,by:me,...r,fp,ts:base+i+j}));
   await w.commit()}}
 const newId=()=>'t'+Date.now()+Math.random().toString(36).slice(2,7);
 const skList=(sk)=>sk.slice(0,5).map(s=>`<p class="bad" style="font-weight:400;margin:4px 0">${esc(s)}</p>`).join('')+(sk.length>5?`<p class="mu">…and ${sk.length-5} more skipped</p>`:'');
@@ -975,7 +975,7 @@ $('#tgo').onclick=async()=>{if(tmode==='bz')return bzSave();const f=$('#tfrom').
 /* ---------- new sale: "Sales by sellers" report ---------- */
 const SM={store:['магазин','store','shop','dokon'],date:['дата','date','sana'],seller:['продавец','seller','sotuvchi','cashier'],name:['наименование','название','name','nomi','product'],art:['артикул','article','art','artikul'],sku:['sku'],bc:['баркод','штрихкод','barcode','shtrixkod'],cat:['категория','category','toifa'],sold:['колвопроданных','sold','soldqty'],ret:['колвовозвращенных','returned','returnedqty'],net:['проданозавычетомвозвратов','net','netsold']};
 const xDate=v=>{if(typeof v==='number'&&v>20000){const o=XLSX.SSF.parse_date_code(v);return o?o.y+'-'+pad(o.m)+'-'+pad(o.d):''}
- const t=String(v==null?'':v);if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*(Z|[+-]\d{2}:?\d{2})$/i.test(t)){const d=new Date(t);if(Number.isFinite(d.getTime())){const q=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d).map(x=>[x.type,x.value]));return q.year+'-'+q.month+'-'+q.day}}const a=t.match(/(\d{4})-(\d{2})-(\d{2})/);if(a)return a[0];const b=t.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);return b?b[3]+'-'+pad(b[2])+'-'+pad(b[1]):''};
+ const t=String(v==null?'':v),a=t.match(/(\d{4})-(\d{2})-(\d{2})/);if(a)return a[0];const b=t.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);return b?b[3]+'-'+pad(b[2])+'-'+pad(b[1]):''};
 async function readSales(file){if(!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))throw new Error('Only Excel files (.xlsx or .xls) are accepted.');
  if(typeof XLSX==='undefined')throw new Error('The Excel reader did not load. Check your internet and refresh the page.');
  const wb=XLSX.read(await file.arrayBuffer());let best=null;
@@ -1015,10 +1015,10 @@ async function loadSales(f,redir,pre){let rows;
   if(map[key])map[key].qty+=r.q;else{const l={k:v.k,store:st,date,seller:r.seller,qty:r.q,name:v.name||r.name};map[key]=l;add.push(l)}});
  /* skip what was already saved: compare file totals per store+date+item+seller with saved sales, add only the difference */
  const nsK=x=>'ns|'+(x.bc||x.art||x.sku||x.name||'').toLowerCase(),sg=(st,d,k,se)=>[st,d,k,se||''].join('|'),have={};
- live().forEach(x=>{if(x.type!=='out')return;const g=sg(x.from,x.date,(x.ns&&!STK[vk(x)])?nsK(x):vk(x),x.seller);have[g]=(have[g]||0)+(+x.qty||0)});
+ live().forEach(x=>{if(x.type!=='out')return;const g=sg(x.from,x.date,x.ns?nsK(x):vk(x),x.seller);have[g]=(have[g]||0)+(+x.qty||0)});
  soLines.forEach(l=>{const g=sg(l.store,l.date,l.k,l.seller);have[g]=(have[g]||0)+l.qty});
  let dup=0,dupQ=0;
- const keep=add.filter(l=>{const g=sg(l.store,l.date,l.k,l.seller),h=have[g]||0;l.base=h;if(!h)return l.qty!==0;const d=l.qty-h;
+ const keep=add.filter(l=>{const g=sg(l.store,l.date,l.k,l.seller),h=have[g]||0;if(!h)return l.qty!==0;const d=l.qty-h;
   if(d>0){dup+=h;dupQ++;l.qty=d;return true}
   dup+=Math.min(h,l.qty);dupQ++;if(d<0)sk.push((l.name||'Item')+' ('+l.store+', '+l.date.split('-').reverse().join('.')+'): file shows '+l.qty+' but '+h+' already saved, nothing added');return false});
  soLines=soLines.concat(keep).sort((a,b)=>STORES.indexOf(a.store)-STORES.indexOf(b.store));soSk=sk;soFile=f.name;
@@ -1034,10 +1034,10 @@ async function soSave(auto){const m=$('#smsg');refreshRenderModel();
   if(nS&&!auto&&!confirm(nS+' line(s) sell more than the store has in stock. The extra pieces are saved as sold and the stock stays at 0. Save?'))return 0;
   const ids={},recs=[];
   soLines.forEach(l=>{const gk=l.store+'|'+l.date;ids[gk]=ids[gk]||newId();
-   const b={type:'out',...pick(l.ns?l.item:STK[l.k]),from:l.store,to:'',date:l.date,note:auto?'Billz sync':'Excel: '+soFile,tid:ids[gk],tname:'Sale '+l.date.replace(/-/g,'.')+' · '+l.store,seller:l.seller||'',photo:null},r=l.qty<0?{ret:true}:{},fid=part=>auto?{_id:'bzs_'+bzHash([l.store,l.date,l.k,l.seller||'',l.base||0,part].join('|'))}:{};
+   const b={type:'out',...pick(l.ns?l.item:STK[l.k]),from:l.store,to:'',date:l.date,note:auto?'Billz sync':'Excel: '+soFile,tid:ids[gk],tname:'Sale '+l.date.replace(/-/g,'.')+' · '+l.store,seller:l.seller||'',photo:null},r=l.qty<0?{ret:true}:{};
    const ded=!l.ns&&l.short?Math.max(0,Math.min(l.qty,l.av)):l.qty;
-   if(l.ns)recs.push({...b,...fid('n'),ns:true,qty:l.qty,...r});
-   else{if(ded)recs.push({...b,...fid('m'),qty:ded,...r});if(l.qty>ded)recs.push({...b,...fid('n'),ns:true,qty:l.qty-ded})}});
+   if(l.ns)recs.push({...b,ns:true,qty:l.qty,...r});
+   else{if(ded)recs.push({...b,qty:ded,...r});if(l.qty>ded)recs.push({...b,ns:true,qty:l.qty-ded})}});
   const b=$('#sgo');b.disabled=true;let n=0;
  try{await commit(recs,auto);n=recs.length;soLines=[];soSk=[];soFile='';m.textContent='';$('#sprev').innerHTML='';if(!auto)go('out')}
  catch(e){m.textContent=e.message==='cancelled'?'Not saved.':'Save failed. Check your internet and try again.';b.disabled=false;if(auto)throw e}b.disabled=false;return n}
@@ -1331,11 +1331,6 @@ async function bzGet(path,params){const t=await auth.currentUser.getIdToken(),q=
  let r,txt='';for(let attempt=0;attempt<5;attempt++){const wait=Math.max(0,550-(Date.now()-_bzLastRequest));if(wait)await new Promise(ok=>setTimeout(ok,wait));_bzLastRequest=Date.now();r=await fetch(BZ_API+'?'+q,{headers:{Authorization:'Bearer '+t}});if(r.status!==429&&r.status<500)break;if(attempt<4)await new Promise(ok=>setTimeout(ok,Math.min(8000,500*Math.pow(2,attempt))))}
  txt=await r.text();let j;try{j=JSON.parse(txt)}catch(e){throw new Error('Billz: unexpected answer ('+r.status+'). The Netlify function may not be installed. '+txt.slice(0,80))}
  if(!r.ok)throw new Error('Billz '+r.status+': '+(m=>typeof m==='string'?m:JSON.stringify(m).slice(0,300))(j.error||j.message||txt.slice(0,160)));return j}
-/* Fixed ids: the same BILLZ record always maps to the same Firestore document, so two devices (or two syncs) can never store it twice. */
-const bzHash=t=>{t=String(t);let h1=0xdeadbeef,h2=0x41c6ce57;for(let i=0;i<t.length;i++){const c=t.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);return (4294967296*(2097151&h2)+(h1>>>0)).toString(36)+t.length.toString(36)};
-const bzClientId='c'+Math.random().toString(36).slice(2,8);
-async function bzLock(){try{const ref=doc(fs,'moves','billz_sync_lock');return await runTransaction(fs,async tx=>{const d=await tx.get(ref),o=d.exists()?d.data():{};if(o.until&&o.until>Date.now()&&o.by!==bzClientId)return false;tx.set(ref,{type:'meta',billzSyncLock:true,by:bzClientId,until:Date.now()+5*60*1000,ts:0});return true})}catch(e){console.warn('BILLZ sync lock unavailable:',e&&e.message||e);return true}}
-async function bzUnlock(){try{await runTransaction(fs,async tx=>{const ref=doc(fs,'moves','billz_sync_lock'),d=await tx.get(ref);if(d.exists()&&d.data().by===bzClientId)tx.set(ref,{type:'meta',billzSyncLock:true,by:bzClientId,until:0,ts:0})})}catch(e){}}
 async function bzAll(path,params,pickRows,limit){const out=[],seenPages=new Set(),pageSize=limit||100;
  for(let p=1;p<=10000;p++){
   const j=bzBody(await bzGet(path,{...params,page:p,limit:pageSize}));let a=pickRows(j)||[];if(!Array.isArray(a))a=[];if(!a.length)break;
@@ -1361,7 +1356,7 @@ async function bzImports(map,ids,from,to){
   const v0=findVar({bc,art:sku,sku:'',color:'',size:''}),it=v0?pick(v0):{sku:'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:'',size:''};
   if(legacy.some(x=>x.to===z&&x.date===date&&x.qty===q&&vk(x)===vk(it))){dup++;return}
   seen.add(key);const g=z+'|'+date+'|'+r.external_import_id;gid[g]=gid[g]||newId();
-  recs.push({_id:'bzx_'+bzHash('in|'+key),type:'in',...it,to:z,from:'',qty:q,date,note:'Billz import #'+r.external_import_id,tid:gid[g],tname:'Import '+date.replace(/-/g,'.'),photo:null,bz})});
+  recs.push({type:'in',...it,to:z,from:'',qty:q,date,note:'Billz import #'+r.external_import_id,tid:gid[g],tname:'Import '+date.replace(/-/g,'.'),photo:null,bz})});
  if(recs.length)await commit(recs,true);return 'Imports: '+recs.length+' added'+(dup?', '+dup+' already there':'')}
 
 async function bzTransfers(map,ids,from,to){
@@ -1374,7 +1369,7 @@ async function bzTransfers(map,ids,from,to){
    if(q<=0)continue;const v=findVar({bc,art:sku,sku:'',color:'',size:''});if(!v){miss++;continue}
    const bz=t.external_id+'|'+(bc||sku),key=bz+'|'+f+'|'+tt+'|'+v.k;if(saved.has(key)){dup++;continue}saved.add(key);
    const g=f+'|'+tt+'|'+t.external_id;gid[g]=gid[g]||newId();
-   recs.push({_id:'bzx_'+bzHash('move|'+key),type:'move',...pick(v),from:f,to:tt,qty:q,date,note:'Billz transfer #'+t.external_id,tid:gid[g],tname:'Transfer '+date.replace(/-/g,'.')+' · '+f+' → '+tt+' #'+t.external_id,bz,photo:null})}}
+   recs.push({type:'move',...pick(v),from:f,to:tt,qty:q,date,note:'Billz transfer #'+t.external_id,tid:gid[g],tname:'Transfer '+date.replace(/-/g,'.')+' · '+f+' → '+tt+' #'+t.external_id,bz,photo:null})}}
  if(recs.length)await commit(recs,true);
  return 'Transfers: '+recs.length+' added'+(dup?', '+dup+' already there':'')+(miss?', '+miss+' items not in the system':'')+(open?', '+open+' not accepted yet (skipped)':'')}
 
@@ -1386,7 +1381,7 @@ async function bzWriteoffs(map,ids,from,to){
   const bz='wo'+(r.write_off_external_id||r.write_off_id)+'|'+(bc||sku),key=bz+'|'+f;
   if(saved.has(key)||seen.has(key)||legacy.some(x=>x.from===f&&x.date===date&&x.qty===q&&vk(x)===v.k)){dup++;return}seen.add(key);
   const g=f+'|'+(r.write_off_id||date);gid[g]=gid[g]||newId();
-  recs.push({_id:'bzx_'+bzHash('rem|'+key),type:'rem',...pick(v),from:f,to:'',qty:q,date,note:[r.write_off_reason,r.description].filter(Boolean).join(' · '),r:'other',tid:gid[g],tname:r.write_off_name||('Write-off '+date.replace(/-/g,'.')),photo:null,bz})});
+  recs.push({type:'rem',...pick(v),from:f,to:'',qty:q,date,note:[r.write_off_reason,r.description].filter(Boolean).join(' · '),r:'other',tid:gid[g],tname:r.write_off_name||('Write-off '+date.replace(/-/g,'.')),photo:null,bz})});
  if(recs.length)await commit(recs,true);
  return 'Write-offs: '+recs.length+' added'+(dup?', '+dup+' already there':'')+(miss?', '+miss+' items not in the system':'')}
 
@@ -1398,85 +1393,7 @@ async function bzSales(map,ids,from,to){
  const res=await loadSales({name:'Billz'},false,rr);const n=await soSave(true);
  return 'Sales: '+n+' lines added'+(res.dup?', '+res.dup+' already there':'')+(res.sk.length?', '+res.sk.length+' skipped':'')}
 
-/* Repair: archive every BILLZ-synced record (imports, transfers, write-offs, sales) in the chosen date range, then re-import them once from BILLZ with fixed ids. Records you typed or uploaded yourself are not touched. */
-const bzIsSynced=x=>!x.del&&((x.type==='out'&&x.note==='Billz sync')||((x.type==='in'||x.type==='move'||x.type==='rem')&&x.bz&&!String(x.bz).startsWith('open|')));
-async function bzRepairSales(){
- let from=$('#bzf').value;const to=$('#bzt').value||today(),po=$('#bzpo');
- po.textContent='Button pressed…';
- if(bzBusy){po.textContent='Another BILLZ task is still marked as running on this page. Reload the page (Ctrl+Shift+R) and try again.';return}
- if(!from){po.textContent='Choose the "Transactions from date" first.';return}
- const st0=bzStart();if(st0&&from<st0)from=st0;
- if(from>to){po.textContent='The From date is after the To date.';return}
- const targets=live().filter(x=>bzIsSynced(x)&&mdate(x)>=from&&mdate(x)<=to);
- const cnt=t=>targets.filter(x=>x.type===t),pc=t=>cnt(t).reduce((a,x)=>a+(+x.qty||0),0);
- if(!confirm('Repair BILLZ data '+from+' → '+to+'?\n\nSaved BILLZ records that will be archived (they stay in Deleted) and re-imported once:\n• Imports: '+cnt('in').length+' lines ('+pc('in')+' pcs)\n• Transfers: '+cnt('move').length+' lines ('+pc('move')+' pcs)\n• Write-offs: '+cnt('rem').length+' lines ('+pc('rem')+' pcs)\n• Sales: '+cnt('out').length+' lines ('+pc('out')+' pcs)\n\nItems you added by hand or from Excel are not touched.'))return;
- if(!(await bzLock())){po.textContent='Another device is syncing BILLZ right now. Try again in a few minutes.';return}
- bzBusy=true;bzQuiet=true;const b=$('#bzrs'),all=$('#bzallgo');b.disabled=true;if(all)all.disabled=true;
- const say=t=>{po.textContent=t};
- try{
-  const del={r:'other',note:'Archived: BILLZ repair (duplicates)',by:me,ts:Date.now()};
-  for(let i=0;i<targets.length;i+=25){const w=writeBatch(fs);targets.slice(i,i+25).forEach(x=>w.update(doc(fs,'moves',x._id),{del}));await w.commit();say('Archived '+Math.min(i+25,targets.length)+' of '+targets.length+' records…')}
-  if(targets.length){const ids=new Set(targets.map(x=>x._id));moves=moves.map(x=>ids.has(x._id)?{...x,del}:x);_renderModelSource=null}
-  say('Re-importing from BILLZ…');
-  const{map,ids}=await bzShops();let problems=0;const out=[];
-  for(const[nm,fn]of[['Imports',bzImports],['Transfers',bzTransfers],['Write-offs',bzWriteoffs],['Sales',bzSales]]){
-   try{await bzSettle();const m=await fn(map,ids,from,to);out.push(m);bzLog('Repair '+m)}catch(e){problems++;out.push(nm+' failed');bzLog('Repair: '+nm+' failed: '+(e.message||e),1)}}
-  say((problems?'Finished with errors — run Repair again for the same dates. ':'Done. ')+out.join(' · ')+'. Now press "Sync product catalog only" and "Compare stock with BILLZ".')
- }catch(e){console.error(e);say('Stopped: '+((e&&(e.code||e.message))||'unknown')+'. Some records may already be archived; run Repair again for the same dates.')}
- finally{bzBusy=false;b.disabled=false;if(all)all.disabled=false;bzUnlock();bzQuietEnd()}
-}
-/* Wipe everything and re-sync from the start date. A full backup is downloaded first. */
-async function bzWipeResync(){
- const start=$('#bzws').value,po=$('#bzpo'),say=t=>{po.textContent=t};
- say('Button pressed…');
- if(bzBusy){say('Another BILLZ task is still marked as running on this page. Reload the page (Ctrl+Shift+R) and press the button again.');return}
- if(!start){say('Choose the Start date first (the Start date box above the button).');return}
- if(!fs||!auth||!auth.currentUser){say('You are not signed in to the database yet. Wait for the page to finish loading.');return}
- const doomed=moves.filter(x=>ST.has(x.type)||x.type==='log');
- const typed=prompt('This PERMANENTLY deletes '+doomed.length+' records and re-syncs from '+start+'.\n\nType WIPE to continue:');
- if(typed===null){say('The confirmation box was closed or blocked by the browser. Nothing was changed. If your browser blocks pop-ups, allow them for this site and try again.');return}
- if(typed.trim().toUpperCase()!=='WIPE'){say('You did not type WIPE. Nothing was changed.');return}
- if(!(await bzLock())){say('Another device is syncing BILLZ right now. Try again in a few minutes.');return}
- bzBusy=true;bzQuiet=true;const b=$('#bzwipe'),all=$('#bzallgo');b.disabled=true;if(all)all.disabled=true;let deleted=false;
- try{
-  say('Refreshing the BILLZ catalog…');
-  await bzProducts(true);
-  if(!($('#bzpo').textContent||'').trim().startsWith('Done:'))throw new Error('The BILLZ catalog did not finish, so nothing was deleted. Try again.');
-  say('Reading BILLZ opening stock…');
-  const rep=bzDay(start,-1),{map,ids}=await bzShops();
-  const rows=await bzAll('/v1/stock-report-table',{report_date:rep,shop_ids:ids,currency:'UZS'},j=>j.rows);
-  const agg={};
-  rows.forEach(r=>{const z=map[r.shop_id];if(!z)return;const q=Math.round(+r.measurement_value||0);if(q<=0)return;
-   const sku=r.product_sku||'',bc=r.product_barcode||'';if(!sku&&!bc)return;
-   const at=bzAttr(r),it={sku:'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:(at.color?normalizeColorLabel(at.color):(nameColor(r.product_base_name||r.product_name||'')?normalizeColorLabel(r.product_base_name||r.product_name||''):'')),size:at.size},k=z+'|'+vk(it)+'|'+bc;
-   if(agg[k])agg[k].qty+=q;else agg[k]={it,z,qty:q}});
-  const list=Object.entries(agg);
-  say('Deleting '+doomed.length+' records…');deleted=true;
-  for(let i=0;i<doomed.length;i+=500){const w=writeBatch(fs);doomed.slice(i,i+500).forEach(x=>w.delete(doc(fs,'moves',x._id)));await w.commit();say('Deleted '+Math.min(i+500,doomed.length)+' of '+doomed.length+'…');await new Promise(r=>setTimeout(r,0))}
-  const gone=new Set(doomed.map(x=>x._id));moves=moves.filter(x=>!gone.has(x._id));_renderModelSource=null;
-  say('Loading opening stock ('+list.length+' lines)…');
-  const gid={},recs=list.map(([k,o])=>{gid[o.z]=gid[o.z]||newId();return{_id:'bzo_'+bzHash('open|'+rep+'|'+k),type:'in',...o.it,to:o.z,from:'',qty:o.qty,date:rep,note:'BILLZ opening stock after clean rebuild',tid:gid[o.z],tname:'BILLZ opening stock · '+o.z,photo:null,bz:'open|'+(o.it.bc||o.it.art)}});
-  if(recs.length)await commit(recs,true);
-  $('#bzf').value=start;if(!$('#bzt').value)$('#bzt').value=today();
-  say('Syncing imports, transfers, write-offs and sales from '+start+'…');
-  bzBusy=false;await bzSync(false);
-  const bad=$('#bzlog').querySelectorAll('.bad').length;
-  say(bad?'Finished with errors — see the Sync log below.':'Done. Everything was re-synced from '+start+'. Check Report → Daily sales and "Compare stock with BILLZ".')
- }catch(e){console.error(e);say('Stopped: '+((e&&(e.code||e.message))||'unknown')+'. '+(deleted?'Some records may already be deleted. Press the button again with the same Start date to finish.':'Nothing was deleted.'))}
- finally{bzBusy=false;b.disabled=false;if(all)all.disabled=false;bzUnlock();bzQuietEnd()}
-}
-/* Read-only: what is saved for the chosen dates, grouped by day, type and where it came from. */
-function bzSummary(){
- const from=$('#bzf').value||dayStr(7),to=$('#bzt').value||today(),out=$('#bzout'),g={};
- const live0=live(),all=moves.filter(x=>ST.has(x.type));
- live0.filter(x=>{const d=mdate(x);return d>=from&&d<=to}).forEach(x=>{
-  const src=x.note==='Billz sync'?'BILLZ sync':/^Excel/i.test(x.note||'')?'Excel upload':x.bz?'BILLZ id':x.free?'free':'typed/other';
-  const k=mdate(x)+'|'+x.type+'|'+src,o=g[k]||(g[k]={d:mdate(x),t:x.type,s:src,n:0,q:0,ns:0});o.n++;o.q+=(+x.qty||0);if(x.ns)o.ns+=(+x.qty||0)});
- const rows=Object.values(g).sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:(a.t+a.s<b.t+b.s?-1:1));
- out.innerHTML='<p class="mu">Records loaded in this browser: '+all.length+' total, '+live0.length+' active. Range '+from+' → '+to+'.</p>'+(rows.length?'<div class="tw"><table class="sm"><thead><tr><th>Date</th><th>Type</th><th>Source</th><th>Lines</th><th>Pieces</th><th>of which "not in system"</th></tr></thead><tbody>'+rows.map(o=>'<tr class="r"><td>'+o.d.split('-').reverse().join('.')+'</td><td>'+({in:'Import',move:'Transfer',out:'Sale',rem:'Write-off'}[o.t]||o.t)+'</td><td>'+o.s+'</td><td>'+o.n+'</td><td>'+nf(o.q)+'</td><td>'+(o.ns?nf(o.ns):'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="bad">Nothing saved for these dates.</p>');
-}
-async function bzSync(auto){if(bzBusy)return;if(!(await bzLock())){if(!auto)bzLog('Another device is syncing BILLZ right now. Wait a few minutes and try again.',1);return}bzQuiet=true;try{await bzSyncCore(auto)}finally{bzUnlock();bzQuietEnd()}}
-async function bzSyncCore(auto){if(bzBusy)return;bzBusy=true;const b=$('#bzallgo')||$('#bzgo');if(b)b.disabled=true;
+async function bzSync(auto){if(bzBusy)return;bzBusy=true;const b=$('#bzallgo')||$('#bzgo');if(b)b.disabled=true;
  if(!auto)$('#bzlog').innerHTML='';
  try{let from=$('#bzf').value;const to=$('#bzt').value||today();if(auto){const d=new Date();d.setDate(d.getDate()-2);from=iso(d)}
   if(!from)throw new Error('Choose the From date.');
@@ -1902,24 +1819,83 @@ async function bzProducts(allowBusy=false){if(bzBusy&&!allowBusy)return;const wa
  }catch(e){o.textContent='Failed: '+(e.message||e)}finally{bzBusy=wasBusy}}
 
 let saZ='',saN=10;
-function saData(z){const f=dayStr(saN-1),t=today(),o={d:{},b:{},c:{},p:{},tot:0,r:{}},ad=(m,k,q)=>m[k]=(m[k]||0)+q;
- for(const x of moves){if(x.del||x.free||x.type!=='out')continue;if(z&&x.from!==z)continue;const d=mdate(x);if(d<f||d>t)continue;const q=+x.qty||0;if(q<=0){if(q<0)ad(o.r,d,-q);continue}o.tot+=q;ad(o.d,d,q);ad(o.b,String(x.brand||'').trim()||'No brand',q);ad(o.c,analyticsColor(x),q);ad(o.p,(x.name||x.art||x.bc||'?')+(x.color?' · '+x.color:''),q)}
+function saData(z){const f=dayStr(saN-1),t=today(),o={d:{},b:{},c:{},p:{},tot:0},ad=(m,k,q)=>m[k]=(m[k]||0)+q;
+ for(const x of moves){if(x.del||x.free||x.type!=='out')continue;if(z&&x.from!==z)continue;const d=mdate(x);if(d<f||d>t)continue;const q=+x.qty||0;o.tot+=q;ad(o.d,d,q);ad(o.b,String(x.brand||'').trim()||'No brand',q);ad(o.c,analyticsColor(x),q);ad(o.p,(x.name||x.art||x.bc||'?')+(x.color?' · '+x.color:''),q)}
  const s=m=>Object.entries(m).sort((a,b)=>b[1]-a[1]);return{...o,b:s(o.b),c:s(o.c),p:s(o.p)}}
 const _saDataOriginal=saData;let _saDataCache={moves:null,store:'',days:0,value:null};
 saData=function(z){if(_saDataCache.moves===moves&&_saDataCache.store===z&&_saDataCache.days===saN&&_saDataCache.value)return _saDataCache.value;const value=_saDataOriginal(z);_saDataCache={moves,store:z,days:saN,value};return value};
 function saSvg(o){const D=[];for(let i=saN-1;i>=0;i--)D.push(dayStr(i));const mx=Math.max(1,...D.map(d=>o.d[d]||0)),slot=100/D.length,base=39,depth=Math.min(1.35,slot*.16),rise=2.1;const grid=[8,16,24,32,39].map(y=>`<line x1="0" y1="${y}" x2="100" y2="${y}" stroke="var(--bd)" stroke-opacity=".42" stroke-width=".18" stroke-dasharray=".8 1.2"/>`).join('');const bars=D.map((d,i)=>{const v=o.d[d]||0,bw=slot*.51,x=i*slot+(slot-bw-depth)*.5,hh=v/mx*30,y=base-hh;return `<g class="sa-3d-bar" data-sa-day="${d}" tabindex="0" role="button" aria-label="Open all sales for ${d}: ${v} pieces sold" style="cursor:pointer"><path d="M${(x+bw).toFixed(2)} ${y.toFixed(2)} L${(x+bw+depth).toFixed(2)} ${(y-rise).toFixed(2)} L${(x+bw+depth).toFixed(2)} ${(base-rise).toFixed(2)} L${(x+bw).toFixed(2)} ${base} Z" fill="var(--ac)" opacity=".48"/><path d="M${x.toFixed(2)} ${y.toFixed(2)} L${(x+depth).toFixed(2)} ${(y-rise).toFixed(2)} L${(x+bw+depth).toFixed(2)} ${(y-rise).toFixed(2)} L${(x+bw).toFixed(2)} ${y.toFixed(2)} Z" fill="var(--ac)" opacity=".95"/><rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(.4,hh).toFixed(2)}" rx=".45" fill="var(--ac)"/><path d="M${(x+.25).toFixed(2)} ${y.toFixed(2)} L${(x+.25).toFixed(2)} ${(base-0.3).toFixed(2)}" stroke="#fff" stroke-opacity=".18" stroke-width=".35"/><title>${d}: ${v} pieces sold</title></g>`}).join('');return `<div class="sa-3d-chart"><svg viewBox="0 0 100 43" preserveAspectRatio="none" role="img" aria-label="3D daily sales bar chart for the last ${saN} days" style="width:100%;height:174px;display:block;overflow:visible"><defs><linearGradient id="sa3dFace" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="var(--ac)"/><stop offset="1" stop-color="var(--ac)" stop-opacity=".68"/></linearGradient></defs>${grid}<path d="M0 ${base} L100 ${base} L100 ${base-rise} L0 ${base-rise} Z" fill="var(--c2)" opacity=".22"/>${bars}</svg></div><div class="sa-date-axis" style="overflow-x:auto;justify-content:space-between">${D.map(d=>`<button type="button" class="dr-date-chip" data-sa-day="${d}" aria-label="Open sales for ${d}" title="Open all sales for ${d}">${d.slice(8,10)}.${d.slice(5,7)}</button>`).join('')}</div><div class="dr-click-hint">Click a bar or its date label to open every saved sale and return for that date.</div>`}
 const saBars=(ttl,l,kind='')=>{const m=l.length?l[0][1]:1;return `<div style="min-width:0"><h3>${ttl}</h3>${l.length?l.slice(0,8).map(([n,q],i)=>{let prod=null;if(kind==='product'){const nm=String(n).split(' · ')[0].trim().toLowerCase();prod=TREE.find(x=>[x.name,x.sku,x.art,x.bc].some(v=>String(v||'').trim().toLowerCase()===nm))}return `<div ${prod?`data-prod="${esc(prod.k)}" role="button" tabindex="0" title="Open product details"`:''} style="display:flex;gap:8px;align-items:center;margin:7px 0;${prod?'cursor:pointer;border-radius:7px;padding:3px 4px;margin-left:-4px':''}">${kind==='color'?colorSwatch(n):''}<span style="width:${kind==='color'?'110px':'120px'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${prod?'text-decoration:underline;text-decoration-style:dotted':''}">${esc(n)}</span><span class="sa-bar-track" style="flex:1;background:var(--c2);border-radius:6px;height:12px"><i class="sa-bar-fill" style="display:block;height:12px;border-radius:3px;width:${Math.max(4,q/m*100).toFixed(1)}%;background:${BC[i%BC.length]}"></i></span><b>${nf(q)}</b>${prod?'<span aria-hidden="true">↗</span>':''}</div>`}).join(''):'<div class="mu">No sales.</div>'}</div>`};
 function saCard(){const v=$('#v-out');if(!v)return;const old=$('#saCard');if(old)old.remove();const o=saData(saZ);
- v.insertAdjacentHTML('afterbegin',`<div class="card" id="saCard" style="margin-bottom:14px"><div class="ln"><div class="sa-headline"><span class="sa-cube-wrap" aria-hidden="true"><span class="sa-cube"><span></span><span></span><span></span><span></span><span></span><span></span></span></span><span><h3 style="margin:0">Sales intelligence</h3><span class="sa-subtitle">Store performance · color mix · best-selling products</span></span></div><span class="mu">last <select id="saN">${[7,10,14,30,60,90].map(n=>`<option${n===saN?' selected':''}>${n}</option>`).join('')}</select> days</span></div><div class="xl" style="margin:8px 0;flex-wrap:wrap">${['',...STORES].map(z=>`<button class="btn${z===saZ?' pri':''}" data-saz="${esc(z)}">${z?esc(z):'All stores'}</button>`).join('')}<button class="btn" id="saX">Download Excel</button></div><p><b>${nf(o.tot)}</b> pieces sold${saZ?' in '+esc(saZ):' in all stores'} <span class="mu">· accessory colors not provided by Billz are separated from missing clothing/shoe colors</span></p>${saSvg(o)}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;margin-top:14px">${saBars('Top brands',o.b)}${saBars('Top colors',o.c,'color')}${saBars('Top products',o.p,'product')}</div></div>`);
+ v.insertAdjacentHTML('afterbegin',`<div class="card" id="saCard" style="margin-bottom:14px"><div class="ln"><div class="sa-headline"><span class="sa-cube-wrap" aria-hidden="true"><span class="sa-cube"><span></span><span></span><span></span><span></span><span></span><span></span></span></span><span><h3 style="margin:0">Sales intelligence</h3><span class="sa-subtitle">Store performance · color mix · best-selling products</span></span></div><span class="mu">last <select id="saN">${[7,10,14,30].map(n=>`<option${n===saN?' selected':''}>${n}</option>`).join('')}</select> days</span></div><div class="xl" style="margin:8px 0;flex-wrap:wrap">${['',...STORES].map(z=>`<button class="btn${z===saZ?' pri':''}" data-saz="${esc(z)}">${z?esc(z):'All stores'}</button>`).join('')}<button class="btn" id="saX">Download Excel</button></div><p><b>${nf(o.tot)}</b> pieces sold${saZ?' in '+esc(saZ):' in all stores'} <span class="mu">· accessory colors not provided by Billz are separated from missing clothing/shoe colors</span></p>${saSvg(o)}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;margin-top:14px">${saBars('Top brands',o.b)}${saBars('Top colors',o.c,'color')}${saBars('Top products',o.p,'product')}</div></div>`);
  v.querySelectorAll('[data-saz]').forEach(b=>b.onclick=()=>{saZ=b.dataset.saz;saCard()});$('#saN').onchange=e=>{saN=+e.target.value;saCard()};$('#saX').onclick=saXl}
 async function saXl(){try{const f=dayStr(saN-1),t=today(),S=['',...STORES].map(z=>{const o=saData(z),blk=(n,l)=>[[n,'Pcs'],...l.slice(0,15),[]];return[(z||'All stores'),[['Period',f+' to '+t],['Pieces sold',o.tot],[],...blk('Top brands',o.b),...blk('Top colors',o.c),...blk('Top products',o.p),['Day','Pcs'],...Object.entries(o.d).sort()],xChart('Top colors (pcs)',o.c)]});await xBook('sales_'+saN+'_days_'+t+'.xlsx',S)}catch(e){alert('Could not make the Excel file: '+(e.message||e))}}
 const _rn=render;render=function(){_rn();if(view==='out')saCard()};
 
+/* ---------- repair sales: compare saved sales with BILLZ per store + date ---------- */
+let rpPlan=null;
+function rpCompare({rows,map,moves:mv,from,to}){
+ const bz={};rows.forEach(r=>{const st=map[r.shop_id]||r.shop_name||'',d=xDate(r.date);if(!st||!d||d<from||d>to)return;const k=d+'|'+st,o=bz[k]||(bz[k]={sold:0,net:0}),s=+r.sold_measurement_value||0,rt=+r.returned_measurement_value||0;o.sold+=s;o.net+=s-rt});
+ const sy={};mv.forEach(x=>{if(x.del||x.type!=='out'||x.free)return;const d=mdate(x);if(!d||d<from||d>to)return;const k=d+'|'+x.from,o=sy[k]||(sy[k]={sold:0,net:0,ids:[]}),q=+x.qty||0;if(q>0)o.sold+=q;o.net+=q;o.ids.push(x._id)});
+ const keys=[...new Set([...Object.keys(bz),...Object.keys(sy)])].sort();
+ return keys.map(k=>{const a=sy[k]||{sold:0,net:0,ids:[]},b=bz[k]||{sold:0,net:0},[d,st]=k.split('|');return{d,st,sysSold:a.sold,sysNet:a.net,bzSold:b.sold,bzNet:b.net,diff:a.net-b.net,ids:a.ids}}).filter(o=>o.diff!==0);
+}
+async function rpCheck(){
+ if(bzBusy)return;const from=$('#rpf').value,to=$('#rpt').value||today(),m=$('#rpm'),out=$('#rpo'),go=$('#rpg');
+ if(!from||from>to){m.textContent='Choose the From and To dates.';return}
+ bzBusy=true;$('#rpc').disabled=true;go.hidden=true;rpPlan=null;out.innerHTML='';m.textContent='Reading BILLZ sales…';
+ try{
+  const{map,ids}=await bzShops();
+  const rows=await bzAll('/v1/product-general-table',{start_date:from,end_date:to,shop_ids:ids,detalization:'day',detalization_by_position:'true',price_type:0,currency:'UZS'},j=>j.products_stats_by_date);
+  const list=rpCompare({rows,map,moves,from,to});
+  rpPlan={from,to,list};
+  if(!list.length){m.textContent='Everything matches BILLZ for '+from+' → '+to+'.';return}
+  const sysT=list.reduce((n,o)=>n+o.sysNet,0),bzT=list.reduce((n,o)=>n+o.bzNet,0);
+  m.textContent=list.length+' store-days differ. Stock Book has '+nf(sysT)+' net units on them, BILLZ has '+nf(bzT)+'.';
+  out.innerHTML='<div class="tw"><table class="sm"><thead><tr><th>Date</th><th>Store</th><th>Stock Book (net)</th><th>BILLZ (net)</th><th>Difference</th></tr></thead><tbody>'+list.slice(0,80).map(o=>'<tr class="r"><td>'+esc(o.d.split('-').reverse().join('.'))+'</td><td>'+esc(o.st)+'</td><td>'+nf(o.sysNet)+'</td><td>'+nf(o.bzNet)+'</td><td class="'+(o.diff>0?'bad':'')+'"><b>'+(o.diff>0?'+':'')+nf(o.diff)+'</b></td></tr>').join('')+'</tbody></table></div>'+(list.length>80?'<p class="mu">…and '+(list.length-80)+' more.</p>':'');
+  go.hidden=false;go.disabled=false;
+ }catch(e){m.textContent='Check failed: '+(e&&e.message||e)}
+ finally{bzBusy=false;$('#rpc').disabled=false}
+}
+async function rpFix(){
+ if(bzBusy||!rpPlan||!rpPlan.list.length)return;
+ const P=rpPlan,m=$('#rpm'),say=t=>{m.textContent=t},ids=P.list.flatMap(o=>o.ids),idset=new Set(ids);
+ if(!confirm('Archive '+ids.length+' saved sales lines on '+P.list.length+' store-days and load those days again from BILLZ?\n\nA backup file of these lines downloads first. Archived lines stay in the Deleted tab.'))return;
+ bzBusy=true;$('#rpc').disabled=true;$('#rpg').disabled=true;let started=false;
+ try{
+  const bk=new Blob([JSON.stringify({format:'Stock Book sales repair backup',exportedAt:new Date().toISOString(),records:moves.filter(x=>idset.has(x._id))})],{type:'application/json'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(bk);a.download='stock-book-sales-before-repair-'+today()+'.json';document.body.appendChild(a);a.click();a.remove();
+  say('Archiving '+ids.length+' saved sales lines…');
+  const del={r:'other',note:'Archived: sales repaired from BILLZ',by:me,ts:Date.now()};
+  for(let i=0;i<ids.length;i+=25){const w=writeBatch(fs);ids.slice(i,i+25).forEach(id=>w.update(doc(fs,'moves',id),{del}));await w.commit();started=true;say('Archived '+Math.min(i+25,ids.length)+' of '+ids.length+'…')}
+  moves=moves.map(x=>idset.has(x._id)?{...x,del}:x);_renderModelSource=null;
+  say('Loading the same days again from BILLZ…');
+  const{map,ids:shopIds}=await bzShops(),days=[...new Set(P.list.map(o=>o.d))].sort();
+  const res=await bzSales(map,shopIds,days[0],days[days.length-1]);
+  bzLog('Sales repair: '+res);
+  say('Done. '+res+'. Checking again…');
+ }catch(e){console.error(e);say('Stopped: '+((e&&(e.code||e.message))||'unknown')+'. '+(started?'Some lines were already archived (they are in the Deleted tab and in the downloaded backup). Send a screenshot before trying again.':'Nothing was changed.'));bzBusy=false;$('#rpc').disabled=false;return}
+ bzBusy=false;$('#rpc').disabled=false;await rpCheck();
+}
+/* Auto-sync lock: only one browser starts the 10-minute auto-sync at a time (two browsers syncing together can both add the same sales). */
+async function bzAutoOnce(){
+ try{
+  const ref=doc(fs,'moves','billz_auto_lock'),snap=await getDoc(ref),d=snap.exists()?snap.data():null;
+  if(d&&Date.now()-(+d.at||0)<9*60*1000)return;
+  const owner=me+'|'+Math.random().toString(36).slice(2),w=writeBatch(fs);
+  w.set(ref,{type:'meta',kind:'billz_auto_lock',owner,at:Date.now()});await w.commit();
+  await new Promise(r=>setTimeout(r,1500));
+  const again=await getDoc(ref);if(!again.exists()||again.data().owner!==owner)return;
+ }catch(e){return}
+ bzSync(true)
+}
+(()=>{const f=new Date();f.setDate(f.getDate()-7);const a=$('#rpf');if(!a)return;a.value=iso(f);$('#rpt').value=today();$('#rpc').onclick=rpCheck;$('#rpg').onclick=rpFix})();
+
 (()=>{const d=new Date();d.setDate(d.getDate()-7);let last='',au='0';try{last=localStorage.getItem('bzLast')||'';au=localStorage.getItem('bzAuto')||'0'}catch(e){}
  $('#bzf').value=iso(d);$('#bzt').value=today();$('#bza').value=au;if(last)$('#bzst').textContent='Last sync: '+new Date(last).toLocaleString('en-GB');
  $('#bza').onchange=()=>{try{localStorage.setItem('bzAuto',$('#bza').value)}catch(e){}};
- $('#bzallgo').onclick=()=>bzSyncAll(false);$('#bzck').onclick=bzCheck;$('#bzrs').onclick=()=>bzRepairSales().catch(e=>{const o=$('#bzpo');if(o)o.textContent='Error: '+((e&&e.message)||e);console.error(e)});$('#bzwipe').onclick=()=>bzWipeResync().catch(e=>{const o=$('#bzpo');if(o)o.textContent='Error: '+((e&&e.message)||e);console.error(e)});$('#bzsum').onclick=bzSummary;$('#bzfs').value=today();$('#bzfp').onclick=bzFreshPrepare;$('#bzpb').onclick=()=>{if(!bzBusy)bzProducts()};
- setInterval(()=>{if($('#bza').value==='1'&&auth&&auth.currentUser)bzSync(true)},10*60*1000)})();
+ $('#bzallgo').onclick=()=>bzSyncAll(false);$('#bzck').onclick=bzCheck;$('#bzfs').value=today();$('#bzfp').onclick=bzFreshPrepare;$('#bzpb').onclick=()=>{if(!bzBusy)bzProducts()};
+ setInterval(()=>{if($('#bza').value==='1'&&auth&&auth.currentUser)bzAutoOnce()},10*60*1000)})();
 
 /* ---------- Billz files: auto-detect and open the right screen ---------- */
 async function sniffKind(file){try{if(typeof XLSX==='undefined'||!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))return '';const wb=XLSX.read(await file.arrayBuffer());
@@ -2571,8 +2547,7 @@ onAuthStateChanged(auth,async u=>{
   if(_snapshotRenderTimer)clearTimeout(_snapshotRenderTimer);
   _snapshotRenderTimer=setTimeout(()=>{
    moves=Array.from(_movesById.values()).sort((a,b)=>(b.ts||0)-(a.ts||0));
-   _renderModelSource=null;if(bzQuiet){_snapshotRenderTimer=null;return}
-   populateDatalists();setLocalCacheNotice('');
+   _renderModelSource=null;populateDatalists();setLocalCacheNotice('');
    if(view!=='bz')render();
    if(currentLanguage!=='en')queueActiveLanguageRefresh();
    scheduleStockCacheSave(u.uid);
