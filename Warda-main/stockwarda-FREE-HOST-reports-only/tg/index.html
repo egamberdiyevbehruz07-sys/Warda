@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="robots" content="noindex,nofollow">
+<title>Hisobot</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:#eef1fa;--card:#fff;--card2:#f4f6fd;--tx:#121835;--mu:#68739b;--bd:#e0e5f5;--ac:#0fb5a3;--ac2:#6366f1;--cur:#0fb5a3;--prev:#a3acd0;--up:#0f9d63;--dn:#e0434d;--upbg:#dcf5ea;--dnbg:#fde3e5;--sh:rgba(40,52,110,.13);--hi:rgba(255,255,255,.9);--glow:rgba(15,181,163,.28)}
+html.dark{--bg:#0a0f24;--card:#131a3b;--card2:#192250;--tx:#eef2ff;--mu:#93a0d0;--bd:#26316b;--ac:#2dd4bf;--ac2:#818cf8;--cur:#2dd4bf;--prev:#5d6aa3;--up:#4ade80;--dn:#ff7b86;--upbg:#14402f;--dnbg:#4a1f2b;--sh:rgba(0,0,0,.5);--hi:rgba(255,255,255,.07);--glow:rgba(45,212,191,.25)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--tx);background:var(--bg);min-height:100vh;padding-bottom:calc(28px + env(safe-area-inset-bottom));-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(70vmax 50vmax at 0% -10%,color-mix(in srgb,var(--ac) 18%,transparent),transparent 62%),radial-gradient(60vmax 45vmax at 105% 5%,color-mix(in srgb,var(--ac2) 16%,transparent),transparent 62%)}
+.wrap{max-width:560px;margin:0 auto;padding:0 14px}
+header{display:flex;align-items:center;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top)) 2px 8px}
+h1{font-size:24px;margin:0;letter-spacing:-.4px}
+.sub{color:var(--mu);font-size:12.5px;margin-top:1px}
+.ib{width:40px;height:40px;border-radius:13px;border:1px solid var(--bd);background:linear-gradient(180deg,color-mix(in srgb,#fff 8%,var(--card)),var(--card));color:var(--tx);display:grid;place-items:center;font-size:18px;box-shadow:inset 0 1px 0 var(--hi),0 2px 0 var(--bd),0 8px 14px -8px var(--sh);cursor:pointer;transition:transform .12s}
+.ib:active{transform:translateY(2px);box-shadow:inset 0 1px 0 var(--hi),0 8px 14px -10px var(--sh)}
+.ib.spin span{display:inline-block;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.cmp{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 10px}
+.cmp .vs{color:var(--mu);font-size:12px;font-weight:600}
+.sel{position:relative}
+.sel select{width:100%;appearance:none;-webkit-appearance:none;border:1px solid var(--bd);background:linear-gradient(180deg,color-mix(in srgb,#fff 6%,var(--card)),var(--card));color:var(--tx);font:inherit;font-weight:650;padding:11px 30px 11px 14px;border-radius:14px;box-shadow:inset 0 1px 0 var(--hi),0 8px 16px -10px var(--sh)}
+.sel.a select{border-color:color-mix(in srgb,var(--cur) 55%,var(--bd))}
+.sel::after{content:"▾";position:absolute;right:13px;top:50%;transform:translateY(-50%);color:var(--mu);pointer-events:none}
+.sel i{position:absolute;left:-1px;top:50%;width:4px;height:18px;margin-top:-9px;border-radius:3px;background:var(--cur)}
+.sel.b i{background:var(--prev)}
+.sticky{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);margin:0 -14px;padding:2px 14px 8px}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 4px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1px solid var(--bd);background:var(--card);color:var(--mu);font:inherit;font-weight:600;padding:8px 15px;border-radius:999px;cursor:pointer;box-shadow:0 6px 12px -9px var(--sh);transition:all .15s}
+.chip.on{color:#04211d;border-color:transparent;background:linear-gradient(180deg,color-mix(in srgb,#fff 35%,var(--ac)),var(--ac));box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 8px 16px -6px var(--glow)}
+.seg{display:inline-flex;background:var(--card2);border-radius:12px;padding:3px;border:1px solid var(--bd)}
+.seg button{border:0;background:transparent;color:var(--mu);font:inherit;font-weight:650;font-size:13px;padding:6px 13px;border-radius:9px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--tx);box-shadow:0 3px 8px -3px var(--sh)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.card{background:linear-gradient(165deg,color-mix(in srgb,#fff 5%,var(--card)),var(--card) 60%);border:1px solid var(--bd);border-radius:20px;padding:16px;margin-top:12px;box-shadow:inset 0 1px 0 var(--hi),0 14px 28px -16px var(--sh)}
+.card h2{font-size:15px;margin:0 0 12px;letter-spacing:-.1px}
+.card h2 small{color:var(--mu);font-weight:500;font-size:12px;margin-left:6px}
+.hero{background:linear-gradient(135deg,color-mix(in srgb,var(--ac) 22%,var(--card)),color-mix(in srgb,var(--ac2) 18%,var(--card)));}
+.hero p{margin:0;font-size:14.5px;line-height:1.5}
+.hero b{font-weight:700}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kpi{background:var(--card2);border:1px solid var(--bd);border-radius:16px;padding:12px 13px;box-shadow:inset 0 1px 0 var(--hi),0 10px 18px -14px var(--sh)}
+.kpi .l{color:var(--mu);font-size:12px;font-weight:600}
+.kpi .v{font-size:26px;font-weight:750;letter-spacing:-.8px;margin:2px 0 4px;font-variant-numeric:tabular-nums}
+.kpi .p{color:var(--mu);font-size:11.5px;margin-top:4px}
+.dl{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+.dl.up{color:var(--up);background:var(--upbg)}.dl.dn{color:var(--dn);background:var(--dnbg)}.dl.flat{color:var(--mu);background:var(--card)}
+.leg{display:flex;gap:14px;font-size:12px;color:var(--mu);margin-bottom:6px}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+svg{display:block;width:100%;height:auto;touch-action:pan-y}
+.ro{min-height:18px;font-size:12.5px;color:var(--mu);margin-bottom:2px}
+.ro b{color:var(--tx)}
+.st{display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;font:inherit;padding:11px 2px;border-top:1px solid var(--bd);cursor:pointer}
+.st:first-of-type{border-top:0;padding-top:2px}
+.st .n{font-weight:650}
+.bars{margin-top:7px;display:grid;gap:4px}
+.bar{height:7px;border-radius:5px;background:var(--card2);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:5px}
+.bar.c i{background:linear-gradient(90deg,var(--cur),color-mix(in srgb,#fff 25%,var(--cur)))}
+.bar.p i{background:var(--prev);opacity:.7}
+.mu{color:var(--mu)}
+.tp{display:flex;gap:11px;padding:11px 0;border-top:1px solid var(--bd)}
+.tp:first-of-type{border-top:0;padding-top:0}
+.rk{width:22px;color:var(--mu);font-weight:700;font-size:13px;padding-top:2px}
+.ph{flex:none;width:54px;height:54px;border-radius:13px;background:var(--card2) center/cover no-repeat;border:1px solid var(--bd);box-shadow:0 8px 14px -8px var(--sh);display:grid;place-items:center;color:var(--mu);font-size:20px;overflow:hidden}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.tp .b{flex:1;min-width:0}
+.tp .nm{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tp .q{font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cc{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+.cc span{font-size:11.5px;color:var(--mu);background:var(--card2);border:1px solid var(--bd);border-radius:999px;padding:1px 8px}
+.cc span b{color:var(--tx);font-weight:650}
+.mv{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mv h3{font-size:12.5px;margin:0 0 6px;color:var(--mu);font-weight:650}
+.mv .it{font-size:13px;padding:6px 0;border-top:1px solid var(--bd)}
+.mv .it:first-of-type{border-top:0}
+.mv .it .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cl{display:grid;grid-template-columns:78px 1fr auto;gap:10px;align-items:center;padding:6px 0;font-size:13.5px}
+.note{color:var(--mu);font-size:11.5px;text-align:center;margin-top:16px;line-height:1.5}
+.sk{border-radius:16px;background:linear-gradient(100deg,var(--card) 30%,var(--card2) 50%,var(--card) 70%);background-size:200% 100%;animation:shm 1.4s linear infinite;height:96px;margin-top:12px;border:1px solid var(--bd)}
+@keyframes shm{to{background-position:-200% 0}}
+.msg{text-align:center;padding:26px 18px}
+.msg .big{font-size:34px}
+.msg p{color:var(--mu);margin:8px 0 0}
+.dots::after{content:"";animation:dt 1.4s steps(4,end) infinite}
+@keyframes dt{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+.fade{animation:fd .35s ease both}
+@keyframes fd{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.fade,.sk,.ib.spin span{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1>Hisobot</h1><div class="sub" id="sub">Kunlik · haftalik · oylik hisobot</div></div>
+    <button class="ib" id="rf" title="Yangilash" aria-label="Yangilash"><span>⟳</span></button>
+  </header>
+  <div class="sticky">
+    <div class="seg" id="tabSeg" style="display:flex;margin:2px 0 8px"><button data-t="day" style="flex:1">Kunlik</button><button data-t="week" style="flex:1">Haftalik</button><button data-t="month" style="flex:1">Oylik</button></div>
+
+    <div class="cmp">
+      <div class="sel a"><i></i><select id="selA" aria-label="Oy"></select></div>
+      <div class="vs">vs</div>
+      <div class="sel b"><i></i><select id="selB" aria-label="Taqqoslash oyi"></select></div>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+  <main id="main"></main>
+</div>
+<script>
+(function(){
+'use strict';
+const tg=window.Telegram&&window.Telegram.WebApp;
+const demo=/[?&]demo\b/.test(location.search);
+const $=s=>document.querySelector(s);
+const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Math.round(n).toLocaleString('en-US').replace(/,/g,'\u202f');
+const STORES=[['all','Hammasi'],['a','Amani'],['w','Warda'],['f','Afiya noor'],['w2','Warda 2']];
+const S={tab:'day',kind:'month',opts:[],wopts:[],dopts:[],defs:{},saved:{},A:'',B:'',data:{},scope:'all',mode:'total',metric:'s',status:'init',err:'',poll:0};
+if(tg){try{tg.ready();tg.expand();if(tg.colorScheme==='dark')document.documentElement.classList.add('dark');
+  const hc=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();tg.setHeaderColor&&tg.setHeaderColor(tg.colorScheme==='dark'?'#0a0f24':'#eef1fa');tg.setBackgroundColor&&tg.setBackgroundColor(tg.colorScheme==='dark'?'#0a0f24':'#eef1fa');}catch(e){}}
+else if(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)document.documentElement.classList.add('dark');
+if(/[?&]dark\b/.test(location.search))document.documentElement.classList.add('dark');
+const tap=()=>{try{tg&&tg.HapticFeedback&&tg.HapticFeedback.selectionChanged()}catch(e){}};
+
+/* ---------- data ---------- */
+async function api(months,refresh){
+  if(demo)return demoApi(months);
+  const r=await fetch('/.netlify/functions/tg-dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({initData:tg?tg.initData:'',months,refresh:!!refresh})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw Object.assign(new Error(j.error||('Xato '+r.status)),{code:r.status});
+  return j;
+}
+async function load(refresh){
+  clearTimeout(S.poll);
+  try{
+    if(!demo&&!(tg&&tg.initData)){S.status='out';return render()}
+    if(!S.opts.length){const j=await api([]);S.opts=j.options;S.wopts=j.weekOptions||[];S.dopts=j.dayOptions||[];S.defs=j.defaults;applySel()}
+    const j=await api(need(),refresh);
+    Object.assign(S.data,j.months||{});
+    S.status=j.status;S.err='';
+    render();
+    if(j.status!=='ready')S.poll=setTimeout(()=>load(false),6000);
+    else $('#rf').classList.remove('spin');
+  }catch(e){S.status='error';S.err=e.message||String(e);S.code=e.code;render();$('#rf').classList.remove('spin')}
+}
+function fillSel(){
+  const list=listFor(kindNow());
+  for(const [id,val] of [['#selA',S.A],['#selB',S.B]]){$(id).innerHTML=list.map(o=>`<option value="${o.key}">${esc(o.label)}</option>`).join('');$(id).value=val}
+}
+
+/* ---------- helpers ---------- */
+const sc=p=>S.scope==='all'?p.all:(p.stores.find(x=>x.key===S.scope)||p.all);
+const days=p=>Math.max(1,p.meta.days);
+const val=(p,k)=>{const v=sc(p)[k]||0;return S.mode==='avg'?v/days(p):v};
+const fv=(n)=>S.mode==='avg'&&n<100?(Math.round(n*10)/10).toLocaleString('en-US'):fmt(n);
+function delta(a,b,invert){
+  if(!b&&!a)return `<span class="dl flat">—</span>`;
+  if(!b)return `<span class="dl ${invert?'dn':'up'}">yangi</span>`;
+  const p=(a-b)/b*100,r=Math.abs(p)<.5?0:Math.round(p);
+  if(!r)return `<span class="dl flat">0%</span>`;
+  const good=invert?r<0:r>0;
+  return `<span class="dl ${good?'up':'dn'}">${r>0?'▲ +':'▼ −'}${Math.abs(r)}%</span>`;
+}
+const short=l=>String(l).split(' ')[0];
+const mname=p=>p.meta.short||short(p.meta.label);
+function colorMapOf(list){const m=new Map();(list||[]).forEach(([c,q])=>m.set(c,q));return m}
+
+/* ---------- sections ---------- */
+function hero(a,b){
+  const sa=val(a,'sold'),sb=val(b,'sold'),ia=val(a,'imp'),ib=val(b,'imp');
+  const pct=(x,y)=>y?Math.round((x-y)/y*100):null;
+  const ps=pct(sa,sb),pi=pct(ia,ib);
+  const verb=(p,up,dn)=>p==null?'':(p>0?`<b style="color:var(--up)">${p}% ${up}</b>`:p<0?`<b style="color:var(--dn)">${Math.abs(p)}% ${dn}</b>`:'<b>o‘zgarmadi</b>');
+  let t=`<p>${esc(a.meta.loc||mname(a)+'da')} ${esc(b.meta.dat||mname(b).toLowerCase()+'ga')} nisbatan savdo ${ps==null?'—':verb(ps,'oshdi','kamaydi')} (${fv(sa)} va ${fv(sb)} dona${S.mode==='avg'?' / kun':''}).`;
+  if(pi!=null)t+=` Kirim ${verb(pi,'oshdi','kamaydi')}.`;
+  t+='</p>';
+  if(S.scope==='all'&&a.stores&&b.stores){
+    const g=a.stores.map(st=>{const o=b.stores.find(x=>x.key===st.key);const x=S.mode==='avg'?st.sold/days(a):st.sold,y=o?(S.mode==='avg'?o.sold/days(b):o.sold):0;return {n:st.name,p:y?(x-y)/y*100:null}}).filter(x=>x.p!=null).sort((x,y)=>y.p-x.p);
+    if(g.length>1)t+=`<p style="margin-top:8px" class="mu">Eng yaxshi o‘sish: <b style="color:var(--tx)">${esc(g[0].n)}</b> (${g[0].p>=0?'+':'−'}${Math.abs(Math.round(g[0].p))}%) · eng sust: <b style="color:var(--tx)">${esc(g.at(-1).n)}</b> (${g.at(-1).p>=0?'+':'−'}${Math.abs(Math.round(g.at(-1).p))}%)</p>`;
+  }
+  return `<section class="card hero fade">${t}</section>`;
+}
+function kpis(a,b){
+  const lab=S.mode==='avg'?' / kun':'';
+  const items=[['Sotildi','sold',0],['Kirim','imp',0],['Sof savdo','net',0],['Qaytarildi','ret',1],['Hisobdan chiqarildi','off',1]];
+  let h=items.map(([l,k,inv])=>{const x=val(a,k),y=val(b,k);return `<div class="kpi"><div class="l">${l}</div><div class="v">${fv(x)}</div>${delta(x,y,inv)}<div class="p">${esc(mname(b))}: ${fv(y)}</div></div>`}).join('');
+  const ra=val(a,'imp')?val(a,'sold')/val(a,'imp')*100:0,rb=val(b,'imp')?val(b,'sold')/val(b,'imp')*100:0;
+  const dd=Math.round(ra-rb);
+  h+=`<div class="kpi"><div class="l">Sotuv / kirim</div><div class="v">${Math.round(ra)}%</div><span class="dl ${dd>0?'up':dd<0?'dn':'flat'}">${dd>0?'▲ +':dd<0?'▼ −':''}${Math.abs(dd)} p.p.</span><div class="p">${esc(mname(b))}: ${Math.round(rb)}%</div></div>`;
+  return `<section class="card fade"><div class="row" style="margin-bottom:12px"><h2 style="margin:0">Asosiy ko‘rsatkichlar${lab?`<small>${lab.trim()}</small>`:''}</h2><div class="seg" id="modeSeg"><button data-m="total" class="${S.mode==='total'?'on':''}">Jami</button><button data-m="avg" class="${S.mode==='avg'?'on':''}">Kuniga</button></div></div><div class="kpis">${h}</div></section>`;
+}
+function chart(a,b){
+  const k=S.metric,A=sc(a).daily[k].slice(0,a.meta.partial?a.meta.days:undefined),B=sc(b).daily[k].slice(0,b.meta.partial?b.meta.days:undefined);
+  const W=340,H=172,pl=30,pr=8,pt=10,pb=22,n=Math.max(a.meta.fullDays,b.meta.fullDays),mx=Math.max(1,...A,...B);
+  const nice=(()=>{const p=Math.pow(10,Math.floor(Math.log10(mx)));const f=mx/p;return (f<=1?1:f<=2?2:f<=5?5:10)*p})();
+  const x=i=>pl+(W-pl-pr)*(n>1?i/(n-1):0),y=v=>pt+(H-pt-pb)*(1-v/nice);
+  const path=arr=>arr.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
+  let g='';for(let i=0;i<=4;i++){const v=nice*i/4,yy=y(v);g+=`<line x1="${pl}" x2="${W-pr}" y1="${yy}" y2="${yy}" stroke="var(--bd)" stroke-width="1"/><text x="${pl-5}" y="${yy+3.5}" font-size="9.5" text-anchor="end" fill="var(--mu)">${fv(v)}</text>`}
+  let xl='';(n<=8?Array.from({length:n},(_,i)=>i+1):[1,5,10,15,20,25,30]).filter(d=>d<=n).forEach(d=>{xl+=`<text x="${x(d-1)}" y="${H-6}" font-size="9.5" text-anchor="middle" fill="var(--mu)">${d}</text>`});
+  const area=A.length?`<path d="${path(A)} L${x(A.length-1).toFixed(1)} ${y(0)} L${x(0)} ${y(0)} Z" fill="url(#ga)"/>`:'';
+  return `<section class="card fade"><div class="row" style="margin-bottom:6px"><h2 style="margin:0">Kunlik dinamika</h2><div class="seg" id="metSeg"><button data-k="s" class="${k==='s'?'on':''}">Sotuv</button><button data-k="i" class="${k==='i'?'on':''}">Kirim</button></div></div>
+  <div class="leg"><span><i style="background:var(--cur)"></i>${esc(a.meta.label)}</span><span><i style="background:var(--prev)"></i>${esc(b.meta.label)}</span></div>
+  <div class="ro" id="ro">Grafikka tegib ko‘ring</div>
+  <svg id="ch" viewBox="0 0 ${W} ${H}"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--cur)" stop-opacity=".35"/><stop offset="1" stop-color="var(--cur)" stop-opacity="0"/></linearGradient></defs>
+  ${g}${xl}${area}<path d="${path(B)}" fill="none" stroke="var(--prev)" stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round"/><path d="${path(A)}" fill="none" stroke="var(--cur)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <line id="cl" x1="0" x2="0" y1="${pt}" y2="${H-pb}" stroke="var(--mu)" stroke-width="1" opacity="0"/><circle id="cd" r="4" fill="var(--cur)" stroke="var(--card)" stroke-width="2" opacity="0"/></svg></section>`;
+}
+function bindChart(a,b){
+  const svg=$('#ch');if(!svg)return;const k=S.metric,A=sc(a).daily[k],B=sc(b).daily[k],W=340,pl=30,pr=8,n=Math.max(a.meta.fullDays,b.meta.fullDays);
+  const move=e=>{const r=svg.getBoundingClientRect(),cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;let i=Math.round(((cx/r.width*W)-pl)/(W-pl-pr)*(n-1));i=Math.max(0,Math.min(n-1,i));
+    const xx=pl+(W-pl-pr)*(n>1?i/(n-1):0),cl=$('#cl'),cd=$('#cd'),va=i<a.meta.days||!a.meta.partial?A[i]||0:null;
+    cl.setAttribute('x1',xx);cl.setAttribute('x2',xx);cl.setAttribute('opacity',.5);
+    if(va!=null){const mx=Math.max(1,...A.slice(0,a.meta.partial?a.meta.days:undefined),...B.slice(0,b.meta.partial?b.meta.days:undefined));cd.setAttribute('cx',xx);cd.setAttribute('opacity',0)}
+    $('#ro').innerHTML=`<b>${i+1}-kun:</b> ${esc(mname(a))} <b>${va==null?'—':fmt(va)}</b> · ${esc(mname(b))} <b>${i<b.meta.fullDays?fmt(B[i]||0):'—'}</b>`};
+  svg.addEventListener('pointermove',move);svg.addEventListener('pointerdown',move);svg.addEventListener('touchmove',move,{passive:true});
+}
+function stores(a,b){
+  if(S.scope!=='all'){
+    const tot=a.all.sold,me=sc(a).sold;return `<section class="card fade"><h2>Umumiy savdodagi ulushi</h2><div class="row"><div style="font-size:26px;font-weight:750">${tot?Math.round(me/tot*100):0}%</div><div class="mu" style="text-align:right">${fmt(me)} / ${fmt(tot)} dona<br>${esc(a.meta.label)}</div></div><div class="bars"><div class="bar c"><i style="width:${tot?me/tot*100:0}%"></i></div></div></section>`}
+  const rows=a.stores.map(st=>{const o=b.stores.find(x=>x.key===st.key)||{sold:0,imp:0};const x=S.mode==='avg'?st.sold/days(a):st.sold,y=S.mode==='avg'?o.sold/days(b):o.sold;return {st,x,y,ix:st.imp,iy:o.imp}});
+  const mx=Math.max(1,...rows.flatMap(r=>[r.x,r.y]));
+  return `<section class="card fade"><h2>Do‘konlar bo‘yicha<small>sotuv · tegib tanlang</small></h2>${rows.map(r=>`<button class="st" data-s="${r.st.key}"><div class="row"><span class="n">${esc(r.st.name)}</span><span><b>${fv(r.x)}</b> ${delta(r.x,r.y,0)}</span></div><div class="bars"><div class="bar c"><i style="width:${r.x/mx*100}%"></i></div><div class="bar p"><i style="width:${r.y/mx*100}%"></i></div></div><div class="row mu" style="font-size:11.5px;margin-top:6px"><span>${esc(mname(b))}: ${fv(r.y)}</span><span>Kirim: ${fmt(r.ix)} ${delta(r.ix,r.iy,0)}</span></div></button>`).join('')}</section>`;
+}
+function prodChips(c){return (c&&c.length)?`<div class="cc">${c.slice(0,5).map(([n,q])=>`<span>${esc(n||'rangsiz')} <b>${fmt(q)}</b></span>`).join('')}</div>`:''}
+function top10(a,b){
+  const list=sc(a).top.slice(0,10),pb=new Map(sc(b).top.map(x=>[x.n,x]));
+  if(!list.length)return `<section class="card fade"><h2>Top 10 mahsulot</h2><p class="mu">Bu davrda savdo yo‘q.</p></section>`;
+  return `<section class="card fade"><h2>Top 10 mahsulot<small>${esc(a.meta.label)}</small></h2>${list.map((x,i)=>{const o=pb.get(x.n);
+   const d=o?delta(x.s,o.s,0)+` <span class="mu" style="font-size:11.5px">${esc(mname(b))}: ${fmt(o.s)}</span>`:`<span class="dl up">yangi</span> <span class="mu" style="font-size:11.5px">${esc(mname(b))}: top 40 da yo‘q</span>`;
+   return `<div class="tp"><div class="rk">${i+1}</div><div class="ph">${x.p?`<img loading="lazy" src="${esc(x.p)}" alt="" onerror="this.remove()">`:'🛍️'}</div><div class="b"><div class="row"><div class="nm">${esc(x.n)}</div><div class="q">${fmt(x.s)}</div></div>${prodChips(x.c)}<div style="margin-top:6px">${d}</div></div></div>`}).join('')}</section>`;
+}
+function movers(a,b){
+  const A=new Map(sc(a).top.map(x=>[x.n,x.s])),B=new Map(sc(b).top.map(x=>[x.n,x.s])),both=[];
+  for(const [n,s] of A){if(B.has(n))both.push({n,d:s-B.get(n),a:s,b:B.get(n)})}
+  const up=both.filter(x=>x.d>0).sort((x,y)=>y.d-x.d).slice(0,5),dn=both.filter(x=>x.d<0).sort((x,y)=>x.d-y.d).slice(0,5);
+  if(!up.length&&!dn.length)return '';
+  const li=(arr,c)=>arr.length?arr.map(x=>`<div class="it"><div class="nm">${esc(x.n)}</div><div><b style="color:var(--${c})">${x.d>0?'+':'−'}${fmt(Math.abs(x.d))}</b> <span class="mu" style="font-size:11.5px">${fmt(x.b)} → ${fmt(x.a)}</span></div></div>`).join(''):'<div class="mu" style="font-size:12.5px">—</div>';
+  return `<section class="card fade"><h2>Eng katta o‘zgarishlar<small>top 40 ichida</small></h2><div class="mv"><div><h3>▲ O‘sdi</h3>${li(up,'up')}</div><div><h3>▼ Tushdi</h3>${li(dn,'dn')}</div></div></section>`;
+}
+function colors(a,b){
+  const ca=sc(a).colors||[],cb=colorMapOf(sc(b).colors);if(!ca.length)return '';
+  const mx=Math.max(1,...ca.map(c=>c[1]));
+  return `<section class="card fade"><h2>Eng ko‘p sotilgan ranglar</h2>${ca.slice(0,6).map(([n,q])=>`<div class="cl"><span style="font-weight:600">${esc(n||'rangsiz')}</span><div class="bar c"><i style="width:${q/mx*100}%"></i></div><span style="text-align:right"><b>${fmt(q)}</b> ${delta(q,cb.get(n)||0,0)}</span></div>`).join('')}</section>`;
+}
+
+/* ---------- render ---------- */
+function kindHtml(){document.querySelectorAll('#kindSeg button').forEach(b=>b.classList.toggle('on',b.dataset.kd===S.kind))}
+function setKind(k){if(k===S.kind)return;stash();S.kind=k;applySel();S.status='building';render();load(false)}
+const kindNow=()=>S.tab==='cmp'?S.kind:S.tab;
+const listFor=k=>k==='day'?S.dopts:k==='week'?S.wopts:S.opts;
+const need=()=>S.tab==='cmp'?[S.A,S.B]:[S.A];
+const selKey=()=>S.tab==='cmp'?'c'+S.kind:S.tab;
+function defsFor(){const d=S.defs,k=kindNow();
+  if(S.tab==='cmp')return k==='week'?{A:d.wa,B:d.wb}:{A:d.a,B:d.b};
+  return k==='day'?{A:d.da}:k==='week'?{A:d.wa}:{A:(S.opts[0]&&S.opts[0].key)||d.a}}
+function applySel(){const s=S.saved[selKey()]||defsFor();S.A=s.A;S.B=s.B||'';fillSel()}
+function stash(){S.saved[selKey()]={A:S.A,B:S.B}}
+function setTab(t){if(t===S.tab)return;stash();S.tab=t;applySel();S.status='building';render();load(false)}
+function tabUi(){document.querySelectorAll('#tabSeg button').forEach(b=>b.classList.toggle('on',b.dataset.t===S.tab));
+  document.querySelector('.cmp .vs').style.display='none';document.querySelector('.sel.b').style.display='none';document.querySelector('.cmp').style.gridTemplateColumns='1fr'}
+const addDays=(d,n)=>new Date(Date.parse(d)+n*864e5).toISOString().slice(0,10);
+function report(a){
+  const s=sc(a),m=a.meta,n=v=>fmt(v||0);
+  const ver=S.scope!=='all'?'':m.verify?(m.verify.ok?'<span class="dl up">✓ BILLZ jami bilan mos</span>':`<span class="dl dn">⚠ BILLZ jami: ${n(m.verify.bs)} / ${n(m.verify.br)}</span>`):'<span class="dl flat">BILLZ bilan solishtirilmadi</span>';
+  const k=[['Sotildi',s.sold],['Qaytarildi',s.ret],['Sof savdo',s.net],['Kirim',s.imp],['Hisobdan chiqarildi',s.off]].map(([l,v])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${n(v)}</div></div>`).join('');
+  let h=`<section class="card fade"><div class="row"><h2 style="margin:0">${esc(m.label)}</h2>${ver}</div><div class="kpis" style="margin-top:12px">${k}</div></section>`;
+  if(m.days>1){const d=s.daily,mx=Math.max(1,...d.s);let r='';for(let i=0;i<m.days;i++){const dt=addDays(m.from,i);r+=`<div class="cl" style="grid-template-columns:48px 1fr auto"><span>${dt.slice(8)}.${dt.slice(5,7)}</span><div class="bar c"><i style="width:${(d.s[i]||0)/mx*100}%"></i></div><b>${n(d.s[i])}</b></div>`}h+=`<section class="card fade"><h2>Kunlar bo‘yicha sotuv</h2>${r}</section>`}
+  if(S.scope==='all'&&a.stores)h+=`<section class="card fade"><h2>Do‘konlar<small>tegib tanlang</small></h2>${a.stores.map(x=>`<button class="st" data-s="${x.key}"><div class="row"><span class="n">${esc(x.name)}</span><span><b>${n(x.sold)}</b> <span class="mu">sotildi</span></span></div><div class="mu" style="font-size:12px">qaytdi ${n(x.ret)} · kirim ${n(x.imp)} · chiqarildi ${n(x.off)}</div></button>`).join('')}</section>`;
+  const top=s.top.slice(0,10);
+  h+=`<section class="card fade"><h2>Top 10 mahsulot</h2>${top.length?top.map((x,i)=>`<div class="tp"><div class="rk">${i+1}</div><div class="ph">${x.p?`<img loading="lazy" src="${esc(x.p)}" alt="" onerror="this.remove()">`:'🛍️'}</div><div class="b"><div class="row"><div class="nm">${esc(x.n)}</div><div class="q">${n(x.s)}</div></div>${prodChips(x.c)}</div></div>`).join(''):'<p class="mu">Bu davrda savdo yo‘q.</p>'}</section>`;
+  let t='';try{t=new Date(m.built).toLocaleString('uz-UZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}catch(e){}
+  return h+`<div class="note">Manba: BILLZ · yangilangan ${esc(t)}${m.partial?' · davr tugamagan':''}</div>`}
+function chipsHtml(){kindHtml();tabUi();$('#chips').innerHTML=STORES.map(([k,n])=>`<button class="chip ${S.scope===k?'on':''}" data-s="${k}">${n}</button>`).join('')}
+function render(){
+  const m=$('#main');chipsHtml();
+  $('#sub').textContent=S.status==='building'?'Ma’lumotlar tayyorlanmoqda':'Kunlik · haftalik · oylik hisobot';
+  if(S.status==='out'){m.innerHTML=`<section class="card msg"><div class="big">📲</div><h2 style="margin-top:6px">Telegram ichida oching</h2><p>Bu sahifa faqat Telegram bot ichida ishlaydi. Botni oching va <b>Hisobot</b> tugmasini bosing.</p></section>`;return}
+  if(S.status==='error'){m.innerHTML=`<section class="card msg"><div class="big">${S.code===403?'🔒':'⚠️'}</div><h2 style="margin-top:6px">${S.code===403?'Ruxsat yo‘q':'Xatolik'}</h2><p>${esc(S.err)}</p></section>`;return}
+  const a=S.data[S.A],b=S.tab==='cmp'?S.data[S.B]:S.data[S.A];
+  if(!a||!b){
+    const got=[a,b].filter(Boolean).length;
+    m.innerHTML=`<section class="card msg fade"><div class="big">⏳</div><h2 style="margin-top:6px">Ma’lumotlar BILLZ dan olinmoqda<span class="dots"></span></h2><p>${got}/2 oy tayyor. Birinchi marta 2–4 daqiqa olishi mumkin, keyingi safar bir zumda ochiladi. Sahifani yopsangiz ham bo‘ladi.</p></section><div class="sk"></div><div class="sk"></div>`;
+    $('#rf').classList.add('spin');return}
+  if(S.tab!=='cmp'){m.innerHTML=report(a);$('#rf').classList.remove('spin');if(S.status==='updating')$('#sub').textContent='Yangilanmoqda…';return}
+  const upd=a.meta.built||'';let t='';try{const d=new Date(upd);t=d.toLocaleString('uz-UZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}catch(e){}
+  m.innerHTML=hero(a,b)+kpis(a,b)+chart(a,b)+stores(a,b)+top10(a,b)+movers(a,b)+colors(a,b)+`<div class="note">Manba: BILLZ · yangilangan ${esc(t)}<br>${esc(a.meta.label)}: ${a.meta.days} kun${a.meta.partial?' (oy tugamagan)':''} · ${esc(b.meta.label)}: ${b.meta.days} kun${b.meta.partial?' (oy tugamagan)':''}<br>“Kuniga” — davr uzunligi farqini tenglashtiradi.</div>`;
+  if(S.status==='updating')$('#sub').textContent='Yangilanmoqda…';
+  bindChart(a,b);
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  const tb=e.target.closest('#tabSeg [data-t]');if(tb){tap();setTab(tb.dataset.t);return}
+  const kd=e.target.closest('#kindSeg [data-kd]');if(kd){tap();setKind(kd.dataset.kd);return}
+  const c=e.target.closest('[data-s]');if(c){S.scope=c.dataset.s;tap();render();window.scrollTo({top:0,behavior:'smooth'});return}
+  const m=e.target.closest('#modeSeg [data-m]');if(m){S.mode=m.dataset.m;tap();render();return}
+  const k=e.target.closest('#metSeg [data-k]');if(k){S.metric=k.dataset.k;tap();render();return}
+});
+$('#selA').addEventListener('change',e=>{S.A=e.target.value;tap();S.status='building';render();load(false)});
+$('#selB').addEventListener('change',e=>{S.B=e.target.value;tap();S.status='building';render();load(false)});
+$('#rf').addEventListener('click',()=>{tap();$('#rf').classList.add('spin');load(true)});
+
+/* ---------- demo data (open /tg/?demo=1 in any browser to preview the design) ---------- */
+function demoMonth(key,scale,seed){
+  let r=seed;const rnd=()=>(r=(r*9301+49297)%233280)/233280;
+  const wk=key[0]==='w',full=wk?7:new Date(+key.slice(0,4),+key.slice(5,7),0).getDate(),names=['Rubashka lolali','Ko‘ylak “Aliya”','Palto klassik','Jinsi shim slim','Sumka mini','Kofta triko','Yubka plisse','Kurtka bomber','Futbolka basic','Ko‘ylak gulli','Sharf ipak','Tufli klassik'];
+  const cols=['qora','oq','binafsha','bordo','ko‘k','qizil','bej','kulrang'];
+  const shares={a:.34,w:.38,f:.1,w2:.18};
+  const mk=(sh)=>{const tot=Math.round((wk?2100:8800)*scale*sh);const top=names.map((n,i)=>{const s=Math.round(tot*(.12-.008*i)*(.8+rnd()*.4));const cc=cols.slice().sort(()=>rnd()-.5).slice(0,2+Math.floor(rnd()*3));let left=s;return {n,s,rt:Math.round(s*.03),p:'',c:cc.map((c,j)=>{const q=j===cc.length-1?left:Math.round(left*(.4+rnd()*.3));left-=q;return [c,Math.max(1,q)]})}}).sort((x,y)=>y.s-x.s);
+    const daily=(base)=>Array.from({length:full},(_,d)=>Math.max(0,Math.round(base/full*(1+.35*Math.sin(d/3.2+seed)+(rnd()-.5)*.5))));
+    const imp=Math.round(tot*(.6+rnd()*.5));const colors=cols.map(c=>[c,Math.round(tot*(.04+rnd()*.14))]).sort((x,y)=>y[1]-x[1]);
+    return {sold:tot,ret:Math.round(tot*.04),net:Math.round(tot*.96),imp,off:Math.round(tot*.03),colors,top,daily:{s:daily(tot),i:daily(imp)}}};
+  const st=[['a','Amani'],['w','Warda'],['f','Afiya noor'],['w2','Warda 2']].map(([k,n])=>({key:k,name:n,...mk(shares[k])}));
+  const sum=f=>st.reduce((a,x)=>a+x[f],0),ser=(f)=>Array.from({length:full},(_,i)=>st.reduce((a,x)=>a+x.daily[f][i],0));
+  const lab=wk?({'w:2026-11-01':['Oxirgi 7 kun (26.10–01.11)','Oxirgi 7 kun','Oxirgi 7 kunda','oxirgi 7 kunga'],'w:2026-10-25':['Oldingi 7 kun (19.10–25.10)','Oldingi 7 kun','Oldingi 7 kunda','oldingi 7 kunga']})[key]:({'2026-09':['Sentabr 2026','Sentabr','Sentabrda','sentabrga'],'2026-10':['Oktabr 2026','Oktabr','Oktabrda','oktabrga'],'2026-08':['Avgust 2026','Avgust','Avgustda','avgustga']})[key];
+  return {meta:{month:key,kind:wk?'week':'month',label:lab[0],short:lab[1],loc:lab[2],dat:lab[3],from:key,to:key,days:full,fullDays:full,partial:false,built:new Date().toISOString()},
+    all:{sold:sum('sold'),ret:sum('ret'),net:sum('net'),imp:sum('imp'),off:sum('off'),colors:st[1].colors,top:st[1].top.map(x=>({...x,s:Math.round(x.s*2.6)})),daily:{s:ser('s'),i:ser('i')}},stores:st};
+}
+function demoApi(months){
+  const opts=[['2026-10','Oktabr 2026'],['2026-09','Sentabr 2026'],['2026-08','Avgust 2026']].map(([key,label])=>({key,label}));
+  const out={};months.forEach(m=>{out[m]=demoMonth(m,(m==='2026-10'||m==='w:2026-11-01')?1.18:1,(m==='2026-10'||m==='w:2026-11-01')?7:3)});
+  return new Promise(ok=>setTimeout(()=>ok({status:'ready',options:opts,defaults:{a:'2026-10',b:'2026-09',wa:'w:2026-11-01',wb:'w:2026-10-25'},weekOptions:[{key:'w:2026-11-01',label:'Oxirgi 7 kun'},{key:'w:2026-10-25',label:'Oldingi 7 kun'},{key:'w:2026-10-18',label:'12.10–18.10'}],months:out}),demo&&/[?&]slow\b/.test(location.search)?3000:200));
+}
+render();load(false);
+})();
+</script>
+</body>
+</html>
