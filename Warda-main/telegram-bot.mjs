@@ -49,8 +49,15 @@ export default async function telegramBot(request) {
         return ok();
       }
       if (!/^\/(start|menu|hisobot|report)(@\w+)?(\s|$)/i.test(text)) return ok();
-      // /start is intentionally silent. Open the Mini App from the persistent
-      // Dashboard menu button in the private bot chat. No chat message is sent.
+      if (!(await core.isAuthorizedChat(chat.id))) {
+        const priv = Number(chat.id) > 0;
+        await core.telegram('sendMessage', token, { chat_id: chat.id, parse_mode: 'HTML',
+          text: priv
+            ? `🔒 Sizga ruxsat berilmagan.\nSizning ID: <code>${chat.id}</code>\n\nHisobotlar faqat hisobot guruhining a’zolari uchun. Guruhga qo‘shiling (bot guruhda admin bo‘lishi kerak) yoki administratorga shu ID ni yuboring.`
+            : `🔒 Bu chat hali ulanmagan.\nChat ID: <code>${chat.id}</code>\n\nStock Book > Report > Telegram delivery bo‘limida shu guruhni tanlab saqlang, so‘ng /start yuboring.` });
+        return ok();
+      }
+      await core.sendMenu(token, chat.id, '0', Number(chat.id) > 0 ? 'Dashboardni oching yoki hisobotni tanlang:' : undefined);
       return ok();
     }
 

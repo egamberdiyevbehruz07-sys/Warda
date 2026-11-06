@@ -1,10 +1,10 @@
 STOCK BOOK — TELEGRAM BOT + MINI APP
 
 START MENU
-- Send /start: the bot stays silent and sends no chat message.
-- Open the persistent “📊 Dashboard” menu button in the private bot chat to launch the Mini App.
+- Send /start, /menu or /hisobot.
+- The bot replies with one button only: “📊 Dashboardni ochish”.
 - In a private chat, the button opens the Telegram Mini App directly.
-- Telegram does not support showing a standalone inline button in a group without sending a message. Use the persistent Dashboard menu button in the private bot chat.
+- In a group, the single button opens the bot's private chat, where the Mini App can be opened.
 - The old list of period, comparison and store buttons is no longer shown in the /start menu.
 
 MINI APP (/tg/)
@@ -29,8 +29,8 @@ EXISTING REPORT DELIVERY
 DEPLOYMENT
 1. Deploy the updated project files to the existing GitHub repository/Render service.
 2. Keep the current environment variables and database configuration.
-3. After Render reports the service is Live, open the bot's private chat. /start sends no message.
-4. Press the persistent “📊 Dashboard” menu button and test all four tabs.
+3. After Render reports the service is Live, open the bot and send /start again.
+4. Press the single “📊 Dashboardni ochish” button and test all four tabs.
 
 SECURITY
 - Never place Telegram, BILLZ, Firebase or Supabase secret keys in frontend code or public repositories.

@@ -44,17 +44,6 @@ exports.handler = async (event) => {
         unique.set(String(c.id), { id: String(c.id), label: label || String(c.id), type: c.type || 'chat' }); }
       return reply(200, { ok: true, chats: [...unique.values()] });
     }
-    if (action === 'saveGroup') {
-      const chatId = String(body.chatId || '').trim();
-      if (!chatId) return reply(400, { error: 'Choose or enter the Telegram group chat ID.' });
-      const bot = await telegram('getMe', token, {});
-      if (String(bot.username || '').toLowerCase() !== 'wardareport2026_bot') {
-        return reply(400, { error: 'The configured token belongs to @' + (bot.username || 'unknown bot') + ', not @wardareport2026_bot. Replace TELEGRAM_BOT_TOKEN with the token created for the correct bot, then redeploy.' });
-      }
-      // Save the report destination without posting a test message.
-      const savedToSupabase = await saveTelegramSettings(chatId, body.enabled !== false);
-      return reply(200, { ok: true, chatId, botUsername: bot.username, storage: savedToSupabase ? 'supabase' : 'firebase-fallback' });
-    }
     if (action === 'sendTest') {
       const chatId = String(body.chatId || '').trim(); if (!chatId) return reply(400, { error: 'Choose or enter the private Telegram group chat ID.' });
       const bot = await telegram('getMe', token, {});
@@ -64,9 +53,7 @@ exports.handler = async (event) => {
       // Do not call getChat here: Telegram can return CHAT_NOT_FOUND for a group
       // that was already discovered from getUpdates. A successful sendMessage is
       // the definitive check that this bot can post to the selected chat.
-      const note = body.enabled === false ? 'Automatic daily reports are currently paused. You can still send a report manually from Stock Book.' : 'Your daily report is scheduled for 22:30 Tashkent time, after the final BILLZ sync. Send /start in this group to open the report menu (overall report and each store, with product photos).';
-      await telegram('sendMessage', token, { chat_id: chatId, text: '✅ <b>Stock Book connected to this group!</b>\n\n' + note, parse_mode: 'HTML' });
-      const savedToSupabase = await saveTelegramSettings(chatId, body.enabled !== false);
+      const savedToSupabase = await saveTelegramSettings(chatId, false);
       return reply(200, { ok: true, chatId, chatTitle: '', botUsername: bot.username, chatType: 'group-or-supergroup', storage:savedToSupabase?'supabase':'firebase-fallback' });
     }
     if (action === 'enableBot') {
@@ -76,31 +63,19 @@ exports.handler = async (event) => {
       if (!siteUrl) return reply(500, { error: 'Netlify URL is missing; deploy the site first.' });
       const url = siteUrl + '/.netlify/functions/telegram-bot';
       await telegram('setWebhook', token, { url, secret_token: webhookSecret(), allowed_updates: ['message', 'callback_query', 'my_chat_member'], drop_pending_updates: false, max_connections: 10 });
-      await telegram('setMyCommands', token, { commands: [{ command: 'start', description: 'Hisobotlar menyusi' }, { command: 'menu', description: 'Menyuni qayta ochish' }, { command: 'tekshir', description: 'BILLZ raqamlarini tekshirish: /tekshir 28.10.2026' }] });
+      await telegram('setMyCommands', token, { commands: [{ command: 'start', description: 'Dashboardni ochish' }] });
       let menuButton = true;
-      try { await telegram('setChatMenuButton', token, { menu_button: { type: 'web_app', text: '📊 Dashboard', web_app: { url: siteUrl + '/tg/' } } }); } catch (e) { menuButton = false; }
+      try { await telegram('setChatMenuButton', token, { menu_button: { type: 'web_app', text: 'Dashboard', web_app: { url: siteUrl + '/tg/' } } }); } catch (e) { menuButton = false; }
       try { // text shown on the bot's profile page
         await telegram('setMyShortDescription', token, { short_description: 'Do‘kon hisobotlari: savdo, kirim va hafta/oy taqqoslash.' });
-        await telegram('setMyDescription', token, { description: 'Do‘kon hisobotlari: savdo, kirim, Top 10 mahsulotlar va hafta/oy taqqoslash.\n\nDashboardni ochish uchun bot chatidagi «📊 Dashboard» menyu tugmasini bosing. /start hech qanday xabar yubormaydi.' });
+        await telegram('setMyDescription', token, { description: 'Do‘kon hisobotlari: savdo, kirim, Top 10 mahsulotlar va hafta/oy taqqoslash.\n\nDashboardni ochish uchun pastdagi «Open» tugmasini bosing yoki /start yuboring.' });
       } catch (_) {}
       try { // pre-build last month and the month before so the dashboard opens instantly
         await fetch(siteUrl + '/.netlify/functions/daily-telegram-report-background', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ trigger: 'dash', months: [dashDefaults().a, dashDefaults().b, dashDefaults().wa, dashDefaults().wb] }), signal: AbortSignal.timeout(8000) });
       } catch (_) {}
       return reply(200, { ok: true, webhook: url, menuButton });
     }
-    if (action === 'sendReportNow') {
-      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(body.date || '')) ? String(body.date) : undefined;
-      // Dispatch manual sends to the same Background Function used by the nightly scheduler.
-      // This prevents the browser-facing Netlify function from timing out while albums are sent.
-      const siteUrl = String(process.env.URL || process.env.DEPLOY_PRIME_URL || '').replace(/\/$/, '');
-      if (!siteUrl) throw new Error('Netlify URL is missing; cannot start the background report job.');
-      const dispatch = await fetch(`${siteUrl}/.netlify/functions/daily-telegram-report-background`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'manual', date, refresh: body.refresh === true }), signal: AbortSignal.timeout(10000)
-      });
-      if (!dispatch.ok) throw new Error(`Could not start the report background job (${dispatch.status}): ${(await dispatch.text().catch(() => '')).slice(0, 250)}`);
-      return reply(202, { ok: true, accepted: true, message: 'Report job started. Check the Telegram group and Netlify background-function logs for completion.' });
-    }
+    if (action === 'sendReportNow') return reply(403, { error: 'Telegram chat reports are disabled. Open the Dashboard Mini App.' });
     return reply(400, { error: 'Unknown action.' });
   } catch (e) { return reply(500, { error: String((e && e.message) || e) }); }
 };

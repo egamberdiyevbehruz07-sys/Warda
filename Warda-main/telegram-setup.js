@@ -44,17 +44,6 @@ exports.handler = async (event) => {
         unique.set(String(c.id), { id: String(c.id), label: label || String(c.id), type: c.type || 'chat' }); }
       return reply(200, { ok: true, chats: [...unique.values()] });
     }
-    if (action === 'saveGroup') {
-      const chatId = String(body.chatId || '').trim();
-      if (!chatId) return reply(400, { error: 'Choose or enter the Telegram group chat ID.' });
-      const bot = await telegram('getMe', token, {});
-      if (String(bot.username || '').toLowerCase() !== 'wardareport2026_bot') {
-        return reply(400, { error: 'The configured token belongs to @' + (bot.username || 'unknown bot') + ', not @wardareport2026_bot. Replace TELEGRAM_BOT_TOKEN with the token created for the correct bot, then redeploy.' });
-      }
-      // Save the report destination without posting a test message.
-      const savedToSupabase = await saveTelegramSettings(chatId, body.enabled !== false);
-      return reply(200, { ok: true, chatId, botUsername: bot.username, storage: savedToSupabase ? 'supabase' : 'firebase-fallback' });
-    }
     if (action === 'sendTest') {
       const chatId = String(body.chatId || '').trim(); if (!chatId) return reply(400, { error: 'Choose or enter the private Telegram group chat ID.' });
       const bot = await telegram('getMe', token, {});
@@ -78,10 +67,10 @@ exports.handler = async (event) => {
       await telegram('setWebhook', token, { url, secret_token: webhookSecret(), allowed_updates: ['message', 'callback_query', 'my_chat_member'], drop_pending_updates: false, max_connections: 10 });
       await telegram('setMyCommands', token, { commands: [{ command: 'start', description: 'Hisobotlar menyusi' }, { command: 'menu', description: 'Menyuni qayta ochish' }, { command: 'tekshir', description: 'BILLZ raqamlarini tekshirish: /tekshir 28.10.2026' }] });
       let menuButton = true;
-      try { await telegram('setChatMenuButton', token, { menu_button: { type: 'web_app', text: '📊 Dashboard', web_app: { url: siteUrl + '/tg/' } } }); } catch (e) { menuButton = false; }
+      try { await telegram('setChatMenuButton', token, { menu_button: { type: 'web_app', text: 'Open', web_app: { url: siteUrl + '/tg/' } } }); } catch (e) { menuButton = false; }
       try { // text shown on the bot's profile page
         await telegram('setMyShortDescription', token, { short_description: 'Do‘kon hisobotlari: savdo, kirim va hafta/oy taqqoslash.' });
-        await telegram('setMyDescription', token, { description: 'Do‘kon hisobotlari: savdo, kirim, Top 10 mahsulotlar va hafta/oy taqqoslash.\n\nDashboardni ochish uchun bot chatidagi «📊 Dashboard» menyu tugmasini bosing. /start hech qanday xabar yubormaydi.' });
+        await telegram('setMyDescription', token, { description: 'Do‘kon hisobotlari: savdo, kirim, Top 10 mahsulotlar va hafta/oy taqqoslash.\n\nDashboardni ochish uchun pastdagi «Open» tugmasini bosing yoki /start yuboring.' });
       } catch (_) {}
       try { // pre-build last month and the month before so the dashboard opens instantly
         await fetch(siteUrl + '/.netlify/functions/daily-telegram-report-background', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ trigger: 'dash', months: [dashDefaults().a, dashDefaults().b, dashDefaults().wa, dashDefaults().wb] }), signal: AbortSignal.timeout(8000) });
