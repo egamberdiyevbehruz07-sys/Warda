@@ -13,7 +13,7 @@ export default async function tgDashboard(request) {
   if (!user) return json(401, { error: 'Telegram imzosi tasdiqlanmadi. Dashboardni bot ichidan oching.' });
   if (!(await core.isAuthorizedUser(user.id))) return json(403, { error: 'Sizga ruxsat berilmagan. Hisobot guruhining a’zosi bo‘lishingiz kerak.', userId: user.id });
 
-  const base = { options: core.dashOptions(), weekOptions: core.dashWeekOptions(), defaults: core.dashDefaults(), user: { id: user.id, name: user.first_name || '' } };
+  const base = { options: core.dashOptions(), weekOptions: core.dashWeekOptions(), dayOptions: core.dashDayOptions(), defaults: core.dashDefaults(), user: { id: user.id, name: user.first_name || '' } };
   const months = [...new Set((Array.isArray(body.months) ? body.months : []).map(String))].filter(core.validMonth).slice(0, 2);
   if (!months.length) return json(200, { ...base, status: 'ready', months: {} });
 

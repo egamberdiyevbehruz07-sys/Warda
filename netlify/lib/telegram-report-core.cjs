@@ -393,26 +393,13 @@ function dashboardRow(chatId) {
   const bot = process.env.TELEGRAM_BOT_USERNAME || 'wardareport2026_bot';
   // Once the Main Mini App is configured in BotFather (TELEGRAM_MAIN_MINIAPP=1) this link opens the dashboard right inside the group.
   if (String(process.env.TELEGRAM_MAIN_MINIAPP || '') === '1') return [{ text: '📊 Dashboardni ochish', url: `https://t.me/${bot}?startapp=dash` }];
-  return [{ text: '📊 Dashboard (shaxsiy chatda)', url: `https://t.me/${bot}?start=dash` }];
+  return [{ text: '📊 Dashboardni ochish', url: `https://t.me/${bot}?start=dash` }];
 }
 function menuKeyboard(period = '0', chatId) {
-  const p = normPeriod(period);
-  const mark = (k, t) => ({ text: (p === k ? '● ' : '') + t, callback_data: 'p:' + k });
-  const btn = s => ({ text: s.name, callback_data: `r:${s.key}:${p}` });
-  return { inline_keyboard: [
-    ...(chatId !== undefined ? [dashboardRow(chatId)] : []),
-    [mark('0', 'Bugun'), mark('1', 'Kecha')],
-    [mark('7', 'Oxirgi 7 kun'), mark('m', 'O‘tgan oy')],
-    [{ text: '📊 Umumiy hisobot', callback_data: `r:all:${p}` }],
-    [{ text: '📈 Hafta taqqoslash', callback_data: 'c:w' }, { text: '📈 Oy taqqoslash', callback_data: 'c:m' }],
-    [btn(STORE_MENU[0]), btn(STORE_MENU[1])],
-    [btn(STORE_MENU[2]), btn(STORE_MENU[3])]
-  ] };
+  return { inline_keyboard: [dashboardRow(chatId === undefined ? 0 : chatId)] }; // one button: the Mini App dashboard
 }
-function menuText(period = '0', intro = 'Davrni va hisobotni tanlang:') {
-  const r = rangeForPeriod(normPeriod(period));
-  const when = r.from === r.to ? fmtDate(r.to) : `${fmtDate(r.from)} – ${fmtDate(r.to)}`;
-  return `📋 <b>HISOBOTLAR MENYUSI</b>\n📅 Davr: <b>${esc(r.short)}</b> (${when})\n\n${intro}`;
+function menuText() {
+  return '📊 <b>HISOBOT</b>\n\nDashboardda kunlik, haftalik va oylik hisobotlar alohida, taqqoslash esa alohida bo‘limda. Pastdagi tugmani bosing.';
 }
 async function sendMenu(token, chatId, period = '0', intro) {
   return telegram('sendMessage', token, { chat_id: chatId, text: menuText(period, intro), parse_mode: 'HTML', reply_markup: menuKeyboard(period, chatId) });
@@ -592,7 +579,8 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
   const dateOnly = value => {
     if (!value) return '';
     const str = String(value);
-    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+    // plain dates / midnight-UTC day labels keep their own date; real timestamps are converted to the Tashkent day
+    if (/^\d{4}-\d{2}-\d{2}(T00:00:00(\.0+)?(Z|\+00:00)?)?$/.test(str) || (/^\d{4}-\d{2}-\d{2}/.test(str) && !/(Z|[+-]\d{2}:?\d{2})$/.test(str))) return str.slice(0, 10);
     const d = new Date(value); if (!Number.isFinite(d.getTime())) return '';
     const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d).map(x => [x.type, x.value]));
     return `${p.year}-${p.month}-${p.day}`;
@@ -718,8 +706,18 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
     if (x.sold > 0) add('out|' + ident + '|sale', { ...x, type:'out', qty:Math.round(x.sold), note:'BILLZ report', tname:'Sale ' + fmtDate(rangeTo) + ' · ' + x.from, bz:'nightly-sale|' + ident + '|sale', source:'billz-report', autoSync:true });
     if (x.returned > 0) add('out|' + ident + '|return', { ...x, type:'out', qty:-Math.round(x.returned), ret:true, note:'BILLZ report return', tname:'Return ' + fmtDate(rangeTo) + ' · ' + x.from, bz:'nightly-sale|' + ident + '|return', source:'billz-report', autoSync:true });
   }
+  let verify = null; // independent check: BILLZ's own period total (no day split) vs. the day-by-day rows we use
+  if (opts.verify) {
+    try {
+      const tot = await fetchRows('/v1/product-general-table', { start_date: rangeFrom, end_date: rangeTo, shop_ids: shopsArg, price_type: 0, currency: 'UZS' }, ['products_stats_by_date', 'products', 'items', 'rows'], 100);
+      let bs = 0, br = 0, ss = 0, sr = 0;
+      for (const r of tot) { bs += Math.max(0, Number(r.sold_measurement_value) || 0); br += Math.max(0, Number(r.returned_measurement_value) || 0); }
+      for (const days of Object.values(daily)) for (const v of Object.values(days)) { ss += v.s; sr += v.r; }
+      verify = { ok: Math.abs(bs - ss) < 0.5 && Math.abs(br - sr) < 0.5, bs: Math.round(bs), br: Math.round(br), ss: Math.round(ss), sr: Math.round(sr) };
+    } catch (e) { console.warn('BILLZ total check failed:', cut(e.message, 160)); }
+  }
   const rows = [...generated.values()];
-  return { rows, daily, counts: { imports: imports.length, writeoffs: writeoffs.length, salesRows: sales.length, savedRows: rows.length } };
+  return { rows, daily, verify, counts: { imports: imports.length, writeoffs: writeoffs.length, salesRows: sales.length, savedRows: rows.length } };
 }
 
 // Nightly / daily snapshot: one day from BILLZ, archived in Supabase.
@@ -809,13 +807,21 @@ function shiftMonth(key, delta) { const [y, m] = key.split('-').map(Number); ret
 function monthLabel(key) { return MONTHS_UZ[Number(key.slice(5, 7)) - 1] + ' ' + key.slice(0, 4); }
 function currentMonthKey() { return todayTashkent().slice(0, 7); }
 const isWeekKey = k => /^w:\d{4}-\d{2}-\d{2}$/.test(String(k));
+const isDayKey = k => /^d:\d{4}-\d{2}-\d{2}$/.test(String(k));
 function validMonth(k) {
   k = String(k); const today = todayTashkent();
+  if (isDayKey(k)) { const d = k.slice(2); return !Number.isNaN(Date.parse(d)) && d <= today && d >= shiftDate(today, -400); }
   if (isWeekKey(k)) { const to = k.slice(2); return !Number.isNaN(Date.parse(to)) && to <= today && to >= shiftDate(today, -400); }
   const cur = currentMonthKey(); return /^\d{4}-(0[1-9]|1[0-2])$/.test(k) && k <= cur && k >= shiftMonth(cur, -24);
 }
 const ddmm = d => d.slice(8, 10) + '.' + d.slice(5, 7);
 function dashLabels(key) {
+  if (isDayKey(key)) {
+    const d = key.slice(2), today = todayTashkent(), full = `${ddmm(d)}.${d.slice(0, 4)}`;
+    if (d === today) return { kind: 'day', label: `Bugun (${full})`, short: 'Bugun', loc: 'Bugun', dat: 'bugungi kunga' };
+    if (d === shiftDate(today, -1)) return { kind: 'day', label: `Kecha (${full})`, short: 'Kecha', loc: 'Kecha', dat: 'kechaga' };
+    return { kind: 'day', label: full, short: ddmm(d), loc: full + ' kuni', dat: full + ' kuniga' };
+  }
   if (isWeekKey(key)) {
     const to = key.slice(2), from = shiftDate(to, -6), today = todayTashkent(), rng = `${ddmm(from)}–${ddmm(to)}`, ago = Math.round((Date.parse(today) - Date.parse(to)) / 86400000);
     if (ago === 0) return { kind: 'week', label: `Oxirgi 7 kun (${rng})`, short: 'Oxirgi 7 kun', loc: 'Oxirgi 7 kunda', dat: 'oxirgi 7 kunga' };
@@ -825,16 +831,18 @@ function dashLabels(key) {
   const name = MONTHS_UZ[Number(key.slice(5, 7)) - 1];
   return { kind: 'month', label: monthLabel(key), short: name, loc: name + 'da', dat: name.toLowerCase() + 'ga' };
 }
+function dashDayOptions() { const today = todayTashkent(); return Array.from({ length: 31 }, (_, i) => { const key = 'd:' + shiftDate(today, -i); return { key, label: dashLabels(key).label }; }); }
 function dashOptions() { const cur = currentMonthKey(); return Array.from({ length: 13 }, (_, i) => { const k = shiftMonth(cur, -i); return { key: k, label: monthLabel(k) + (i === 0 ? ' (hozirgacha)' : '') }; }); }
 function dashWeekOptions() { const today = todayTashkent(); return Array.from({ length: 12 }, (_, i) => { const key = 'w:' + shiftDate(today, -7 * i); return { key, label: dashLabels(key).short }; }); }
-function dashDefaults() { const cur = currentMonthKey(), today = todayTashkent(); return { a: shiftMonth(cur, -1), b: shiftMonth(cur, -2), wa: 'w:' + today, wb: 'w:' + shiftDate(today, -7) }; }
+function dashDefaults() { const cur = currentMonthKey(), today = todayTashkent(); return { da: 'd:' + today, db: 'd:' + shiftDate(today, -1), a: shiftMonth(cur, -1), b: shiftMonth(cur, -2), wa: 'w:' + today, wb: 'w:' + shiftDate(today, -7) }; }
 function monthRange(key) {
+  if (isDayKey(key)) { const d = key.slice(2); return { key, from: d, to: d, partial: d === todayTashkent(), fullDays: 1, days: 1 }; }
   if (isWeekKey(key)) { const to = key.slice(2); return { key, from: shiftDate(to, -6), to, partial: to === todayTashkent(), fullDays: 7, days: 7 }; }
   const [y, m] = key.split('-').map(Number), fullDays = new Date(Date.UTC(y, m, 0)).getUTCDate(), today = todayTashkent();
   const partial = key === today.slice(0, 7), from = key + '-01', to = partial ? today : key + '-' + String(fullDays).padStart(2, '0');
   return { key, from, to, partial, fullDays, days: dayCount(from, to) };
 }
-function summarizeMonth(r, rows, daily) {
+function summarizeMonth(r, rows, daily, verify) {
   const d = aggregate(rows, r.to, { top: 40 });
   const desc = (a, b) => b.qty - a.qty;
   const colorsOut = list => [...(list || [])].sort(desc).slice(0, 8).map(c => [colorLabelUz(c.color), c.qty]);
@@ -854,7 +862,7 @@ function summarizeMonth(r, rows, daily) {
     return { key: m.key, name: m.name, sold: st ? st.gross : 0, ret: st ? st.returns : 0, net: st ? st.net : 0, imp, off, colors: st ? colorsOut(st.colors) : [], top: st ? st.salesProducts.map((x, i) => prod(x, i < 10)) : [], daily: series(m.name) };
   });
   return {
-    meta: { ...dashLabels(r.key), month: r.key, from: r.from, to: r.to, days: r.days, fullDays: r.fullDays, partial: r.partial, built: new Date().toISOString() },
+    meta: { ...dashLabels(r.key), month: r.key, from: r.from, to: r.to, days: r.days, fullDays: r.fullDays, partial: r.partial, built: new Date().toISOString(), verify: verify || null },
     all: { sold: d.gross, ret: d.returns, net: d.net, imp: d.importQty, off: d.writeoffQty, colors: colorsOut(d.colors), top: d.salesProducts.map((x, i) => prod(x, i < 10)), daily: series('') },
     stores
   };
@@ -862,8 +870,8 @@ function summarizeMonth(r, rows, daily) {
 async function dashBuild(monthKey) {
   const r = monthRange(monthKey);
   try {
-    const { rows, daily } = await collectBillz(r.from, r.to);
-    const payload = summarizeMonth(r, rows, daily);
+    const { rows, daily, verify } = await collectBillz(r.from, r.to, { verify: true });
+    const payload = summarizeMonth(r, rows, daily, verify);
     await cacheSet('dash:' + monthKey, payload);
     return payload;
   } finally { await cacheSet('dashbuild:' + monthKey, { at: 0 }); }
@@ -999,5 +1007,5 @@ async function sendSalesCheck(chatId, date) {
 async function wasMonthlySent(monthKey) { const r = await cacheGet('monthly-sent:' + monthKey); return !!r; }
 async function markMonthlySent(monthKey) { await cacheSet('monthly-sent:' + monthKey, { sentAt: new Date().toISOString() }); }
 
-module.exports = { sendSalesCheck, sendCompareView, dashLabels, dashWeekOptions, cacheGet, cacheSet, shiftMonth, monthLabel, validMonth, dashOptions, dashDefaults, dashBuild, dashGet, dashClaimBuilds, summarizeMonth, monthRange, verifyInitData, isAuthorizedUser, rangeForPeriod, wasMonthlySent, markMonthlySent, getTelegramToken, todayTashkent, telegram, sendDailyReport, syncBillzToday, saveTelegramSettings, getTelegramSettings,
+module.exports = { sendSalesCheck, sendCompareView, dashLabels, dashWeekOptions, cacheGet, cacheSet, shiftMonth, monthLabel, validMonth, dashOptions, dashDayOptions, dashDefaults, dashBuild, dashGet, dashClaimBuilds, summarizeMonth, monthRange, verifyInitData, isAuthorizedUser, rangeForPeriod, wasMonthlySent, markMonthlySent, getTelegramToken, todayTashkent, telegram, sendDailyReport, syncBillzToday, saveTelegramSettings, getTelegramSettings,
   wasNightlySent, markNightlySent, sendMenu, menuText, menuKeyboard, dateForPeriod, sendReportView, recordSeenChat, listSeenChats, isAuthorizedChat, webhookSecret, STORE_MENU };
