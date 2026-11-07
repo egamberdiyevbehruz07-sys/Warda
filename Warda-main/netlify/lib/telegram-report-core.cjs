@@ -96,7 +96,14 @@ const cut = (v, n = 160) => { const s = String(v == null ? '' : v).trim(); retur
 const qty = x => Math.round(Number(x) || 0);
 const picUrl = v => typeof v === 'string' && (/^https?:\/\//i.test(v) || /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(v)) ? v : '';
 
+// HARD SAFETY GATE: Stock Book reports are Mini App only. Never deliver report content to chats.
+// Keep non-message Bot API methods (webhook/menu setup, getChat, callback acknowledgements) available.
+const CHAT_DELIVERY_METHODS = new Set(['sendMessage', 'sendPhoto', 'sendMediaGroup', 'sendDocument', 'sendVideo', 'sendAnimation', 'sendAudio', 'sendVoice', 'sendLocation', 'sendVenue', 'sendContact', 'sendPoll', 'sendSticker', 'sendInvoice', 'copyMessage', 'copyMessages', 'forwardMessage', 'forwardMessages']);
 async function telegram(method, token, payload, timeoutMs = 20000) {
+  if (CHAT_DELIVERY_METHODS.has(String(method))) {
+    console.warn(`[dashboard-only] Blocked Telegram ${method}; reports are available in the Mini App only.`);
+    return null;
+  }
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -121,6 +128,9 @@ async function telegram(method, token, payload, timeoutMs = 20000) {
   throw lastError || new Error(`Telegram ${method} failed after retries.`);
 }
 async function sendOnePhoto(token, chatId, item) {
+  // Hard-disabled: never upload product photos to Telegram chats.
+  console.warn('[dashboard-only] Product photo delivery blocked; view photos in the Mini App.');
+  return false;
   const p = picUrl(item.photo);
   if (!p) return false;
   const caption = cut(item.caption || '', 900);
@@ -149,6 +159,9 @@ async function sendOnePhoto(token, chatId, item) {
   } catch (e) { console.warn('Photo send skipped:', cut(e.message, 160)); return false; }
 }
 async function sendPhotoAlbum(token, chatId, items, maxItems) {
+  // Hard-disabled: product photo albums belong in the Mini App, never in Telegram chats.
+  console.warn('[dashboard-only] Product photo album delivery blocked.');
+  return 0;
   const list = items.filter(x => picUrl(x.photo)).slice(0, maxItems);
   if (!list.length) return 0;
   // Group public URLs as an album for a compact Telegram view. Individual upload is a fallback.
