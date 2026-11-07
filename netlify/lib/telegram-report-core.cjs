@@ -31,8 +31,8 @@ async function supabaseRequest(path, options = {}) {
   if (!body) return null;
   try { return JSON.parse(body); } catch { return body; }
 }
-async function saveTelegramSettings(chatId, enabled = true) {
-  if (!getSupabaseConfig()) return false;
+async function saveTelegramSettings(chatId, enabled = false) {
+  if (!getSupabaseConfig()) throw new Error('Access Management is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the hosting service.');
   await supabaseRequest('stock_book_telegram_settings?on_conflict=id', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: { id: 'default', chat_id: String(chatId), enabled: enabled !== false, timezone: TZ, daily_time: '22:30', updated_at: new Date().toISOString() }
@@ -96,7 +96,18 @@ const cut = (v, n = 160) => { const s = String(v == null ? '' : v).trim(); retur
 const qty = x => Math.round(Number(x) || 0);
 const picUrl = v => typeof v === 'string' && (/^https?:\/\//i.test(v) || /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(v)) ? v : '';
 
+// Strict allowlist: only Telegram account, group-membership, webhook and menu configuration
+// methods are permitted. Any message/photo/edit/forward/delete method is blocked by default.
+const TELEGRAM_SAFE_METHODS = new Set([
+  'getMe','getWebhookInfo','getChat','getChatMember','getUpdates',
+  'setWebhook','setMyCommands','setChatMenuButton','setMyShortDescription','setMyDescription',
+  'answerCallbackQuery'
+]);
 async function telegram(method, token, payload, timeoutMs = 20000) {
+  if (!TELEGRAM_SAFE_METHODS.has(String(method))) {
+    console.warn('Blocked Telegram method in Dashboard-only mode:', method);
+    throw new Error('Telegram chat delivery and message changes are disabled. Open the Dashboard Mini App.');
+  }
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -120,52 +131,10 @@ async function telegram(method, token, payload, timeoutMs = 20000) {
   }
   throw lastError || new Error(`Telegram ${method} failed after retries.`);
 }
-async function sendOnePhoto(token, chatId, item) {
-  const p = picUrl(item.photo);
-  if (!p) return false;
-  const caption = cut(item.caption || '', 900);
-  // Try Telegram's remote URL support first; this is the smallest and fastest transfer.
-  if (/^https?:\/\//i.test(p)) {
-    try { await telegram('sendPhoto', token, { chat_id: chatId, photo: p, caption, parse_mode: 'HTML' }, 6000); return true; }
-    catch (_) { /* If Telegram cannot fetch a protected/redirected CDN URL, fetch it here and upload bytes. */ }
-  }
-  try {
-    let bytes, mime = 'image/jpeg', filename = 'product.jpg';
-    if (/^data:image\//i.test(p)) {
-      const m = p.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i); if (!m) return false;
-      mime = m[1]; bytes = Buffer.from(m[2], 'base64'); filename = mime.includes('png') ? 'product.png' : 'product.jpg';
-    } else {
-      const r = await fetch(p, { signal: AbortSignal.timeout(5000) });
-      if (!r.ok) return false;
-      mime = (r.headers.get('content-type') || 'image/jpeg').split(';')[0];
-      const ab = await r.arrayBuffer(); if (ab.byteLength > 9 * 1024 * 1024 || ab.byteLength < 100) return false;
-      bytes = Buffer.from(ab); filename = mime.includes('png') ? 'product.png' : mime.includes('webp') ? 'product.webp' : 'product.jpg';
-    }
-    if (!/^image\//i.test(mime) || bytes.length > 9 * 1024 * 1024) return false;
-    const form = new FormData(); form.set('chat_id', String(chatId)); form.set('caption', caption); form.set('parse_mode', 'HTML');
-    form.set('photo', new Blob([bytes], { type: mime }), filename);
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(6000) });
-    const data = await res.json().catch(() => ({})); return !!(res.ok && data.ok);
-  } catch (e) { console.warn('Photo send skipped:', cut(e.message, 160)); return false; }
-}
-async function sendPhotoAlbum(token, chatId, items, maxItems) {
-  const list = items.filter(x => picUrl(x.photo)).slice(0, maxItems);
-  if (!list.length) return 0;
-  // Group public URLs as an album for a compact Telegram view. Individual upload is a fallback.
-  if (list.length >= 2 && list.every(x => /^https?:\/\//i.test(x.photo))) {
-    try {
-      await telegram('sendMediaGroup', token, { chat_id: chatId, media: list.map(x => ({ type: 'photo', media: x.photo, caption: cut(x.caption || '', 900), parse_mode: 'HTML' })) }, 7000);
-      return list.length;
-    } catch (e) { console.warn('Photo album URL fallback:', cut(e.message, 180)); }
-  }
-  let sent = 0;
-  // Limit concurrent fallback sends to five, keeping the daily function inside Netlify's short scheduled runtime.
-  for (let i = 0; i < list.length; i += 5) {
-    const results = await Promise.all(list.slice(i, i + 5).map(x => sendOnePhoto(token, chatId, x).catch(() => false)));
-    sent += results.filter(Boolean).length;
-  }
-  return sent;
-}
+// Legacy report-photo helpers are retained as inert compatibility shims.
+// Product photos are rendered by the Mini App and are never uploaded to Telegram chats.
+async function sendOnePhoto() { return false; }
+async function sendPhotoAlbum() { return 0; }
 
 function variantLookup(variants) {
   const barcode = new Map(), id = new Map(), skus = new Map();
@@ -916,9 +885,11 @@ function verifyInitData(initData, maxAgeSec = 86400) {
 const memberCache = new Map();
 async function isAuthorizedUser(userId) {
   const id = String(userId);
-  if (String(process.env.TELEGRAM_ALLOWED_USER_IDS || '').split(',').map(x => x.trim()).includes(id)) return true;
+  if (String(process.env.TELEGRAM_ALLOWED_USER_IDS || '').split(',').map(x => x.trim()).filter(Boolean).includes(id)) return true;
   const hit = memberCache.get(id);
-  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.ok;
+  // Cache only positive membership briefly. A newly-added manager should not remain denied
+  // because an earlier negative result was cached for several minutes.
+  if (hit && hit.ok && Date.now() - hit.at < 15000) return true;
   let ok = false;
   try {
     const cfg = await getTelegramSettings();
@@ -927,7 +898,8 @@ async function isAuthorizedUser(userId) {
       ok = ['creator', 'administrator', 'member'].includes(m.status) || (m.status === 'restricted' && m.is_member === true);
     }
   } catch (e) { console.warn('getChatMember failed (make the bot an admin of the group):', cut(e.message, 140)); }
-  memberCache.set(id, { ok, at: Date.now() });
+  if (ok) memberCache.set(id, { ok: true, at: Date.now() });
+  else memberCache.delete(id);
   return ok;
 }
 

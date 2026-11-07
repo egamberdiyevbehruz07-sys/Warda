@@ -98,7 +98,7 @@ setInterval(() => {
   const now = new Date(), key = now.toISOString().slice(0, 16);
   if (key === lastTick) return; lastTick = key;
   for (const [name, fn] of fns) {
-    if (fn.schedule && cronMatch(fn.schedule, now)) {
+    if (fn.schedule && !name.includes('telegram-report') && cronMatch(fn.schedule, now)) {
       console.log('Scheduled run:', name, key);
       Promise.resolve().then(() => fn.handler(new Request(`http://localhost:${PORT}/.netlify/functions/${name}`, { method: 'POST', body: '{}' }))).catch(e => console.error('Scheduled function failed:', name, e && e.message || e));
     }
