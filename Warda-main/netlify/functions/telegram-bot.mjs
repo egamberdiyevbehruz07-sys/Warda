@@ -1,22 +1,8 @@
 import core from '../lib/telegram-report-core.cjs';
 
-// Telegram webhook: handles /start (menu) and the inline-button taps.
-// It answers Telegram immediately and hands the slow work (BILLZ sync + sending photos)
-// to the Netlify Background Function, so Telegram never times out or retries.
+// Dashboard-only Telegram webhook. It records group membership updates so Stock Book can
+// discover the connected group; it never sends messages, photos or report replies.
 const ok = () => new Response('ok', { status: 200 });
-
-async function dispatchReport(chatId, scope, period) {
-  const token = core.getTelegramToken();
-  const siteUrl = String(process.env.URL || process.env.DEPLOY_PRIME_URL || '').replace(/\/$/, '');
-  if (!siteUrl) throw new Error('Netlify URL is missing.');
-  const r = await fetch(`${siteUrl}/.netlify/functions/daily-telegram-report-background`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trigger: 'bot', chatId: String(chatId), scope, period }),
-    signal: AbortSignal.timeout(8000)
-  });
-  if (!r.ok) throw new Error(`Background job rejected (${r.status}).`);
-}
 
 export default async function telegramBot(request) {
   if (request.method !== 'POST') return new Response('Telegram webhook', { status: 200 });

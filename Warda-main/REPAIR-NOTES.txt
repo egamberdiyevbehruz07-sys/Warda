@@ -1,0 +1,34 @@
+WARDA STOCK BOOK — REPAIR NOTES
+
+UI
+- Replaced the Reports-page Telegram delivery card with Access Management.
+- Admin connects one private group. The bot must be a group administrator. Members of that group can open the Mini App; add/remove users in Telegram's group member controls.
+- The Mini App endpoint verifies signed Telegram initData and checks membership with Telegram getChatMember. An optional TELEGRAM_ALLOWED_USER_IDS server allowlist remains available for recovery/admin access.
+
+TELEGRAM DELIVERY SHUTDOWN
+- /start is silent; the webhook only records group updates and acknowledges callback queries.
+- Daily, retry and monthly report schedule functions are no-op endpoints with no schedule declarations.
+- Render's in-process scheduler explicitly skips all telegram-report scheduled functions.
+- The dashboard background function only builds Mini App cache and ignores other triggers.
+- A strict Telegram API allowlist permits only identity/group lookup, webhook/menu setup and callback acknowledgement. Message, photo, album, document, edit, forward, delete and all other methods are blocked.
+- Legacy photo helpers are inert. Old standalone bot/report entrypoints are disabled.
+
+DATA-INTEGRITY CODE FIX
+- BILLZ source movement rows receive deterministic source-line document IDs. Retrying a partially completed batched sync no longer treats a partially written batch as a complete import, and does not duplicate previously written lines.
+- Existing Firestore history is preserved. No automatic destructive migration or historical rewrite is performed.
+
+REQUIRED CONFIGURATION
+- Keep existing Firebase and BILLZ variables unchanged.
+- Telegram Access Management requires TELEGRAM_BOT_TOKEN, SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the hosting environment.
+- Do not put credentials in this ZIP or in browser code. The bot must be an administrator of the connected group.
+
+VALIDATION COMPLETED ON SOURCE
+- JavaScript/MJS/CJS syntax checks passed.
+- Inline scripts in index.html and tg/index.html passed Node syntax checks.
+- Telegram send/photo/message/edit/forward/delete methods were tested and blocked by the strict method guard.
+- ZIP integrity will be checked after packaging.
+
+NOT VERIFIED
+- No live Render deployment was performed.
+- No production Firestore database or private BILLZ export was available. Historical sales, return, revenue and stock totals have not been reconciled in production.
+- Group authorization must be tested with a real manager account after deployment.

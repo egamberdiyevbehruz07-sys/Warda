@@ -1,4 +1,4 @@
-export const config = { schedule: '30 17 * * *' };
-
-// Telegram chat delivery is intentionally disabled. Reports are viewed only in the Mini App.
-export default async function dailyTelegramReport() { console.log('Skipped: dashboard-only mode; no Telegram chat reports are sent.'); }
+// Dashboard-only build: report delivery scheduling is intentionally removed.
+export default async function disabledTelegramReportSchedule() {
+  return new Response('Disabled: all reports are inside the Dashboard Mini App.', { status: 200 });
+}

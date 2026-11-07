@@ -1,6 +1,6 @@
 import core from '../lib/telegram-report-core.cjs';
 
-// Dashboard-only background worker. It may build/cache Mini App data, but never sends chat messages or photos.
+// Dashboard-only background worker. It only builds/caches Mini App data; Telegram chat delivery is disabled.
 export default async function dailyTelegramReportBackground(request) {
   const token = String(process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_API_TOKEN || '').trim();
   if (!token || (request.headers.get('authorization') || '') !== `Bearer ${token}`) return new Response('Unauthorized', { status: 401 });
