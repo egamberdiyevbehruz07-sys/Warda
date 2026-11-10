@@ -614,7 +614,8 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
   const daily = {}; // daily[store][date] = { s: sold, r: returned, i: imported, w: written off }
   const bump = (st, dt, k, v) => { const o = ((daily[st] ||= {})[dt] ||= { s: 0, r: 0, i: 0, w: 0 }); o[k] += v; };
   // BILLZ own-total check starts together with the main load (no extra waiting)
-  const totalP = opts.verify
+  const doVerify = opts.verify && (Date.parse(rangeTo) - Date.parse(rangeFrom)) / 864e5 < 7; // check short ranges only: keeps big months fast
+  const totalP = doVerify
     ? fetchRows('/v1/product-general-table', { start_date: rangeFrom, end_date: rangeTo, shop_ids: shopsArg, price_type: 0, currency: 'UZS' }, ['products_stats_by_date', 'products', 'items', 'rows'], 100).catch(e => { console.warn('BILLZ total check failed:', cut(e.message, 160)); return null; })
     : Promise.resolve(null);
   const [imports, writeoffs, sales, catalog] = await Promise.all([
@@ -711,7 +712,7 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
     if (x.returned > 0) add('out|' + ident + '|return', { ...x, type:'out', qty:-Math.round(x.returned), ret:true, note:'BILLZ report return', tname:'Return ' + fmtDate(rangeTo) + ' · ' + x.from, bz:'nightly-sale|' + ident + '|return', source:'billz-report', autoSync:true });
   }
   let verify = null; // independent check: BILLZ's own period total (no day split) vs. the day-by-day rows we use
-  if (opts.verify) {
+  if (doVerify) {
     const tot = await totalP;
     if (tot) {
       let bs = 0, br = 0, ss = 0, sr = 0;

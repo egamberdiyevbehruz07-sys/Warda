@@ -268,9 +268,9 @@ function tabUi(){document.querySelectorAll('#tabSeg button').forEach(b=>b.classL
 const addDays=(d,n)=>new Date(Date.parse(d)+n*864e5).toISOString().slice(0,10);
 function report(a){
   const s=sc(a),m=a.meta,n=v=>fmt(v||0);
-  const ver=S.scope!=='all'?'':m.verify?(m.verify.ok?'<span class="dl up">✓ BILLZ jami bilan mos</span>':`<span class="dl dn">⚠ BILLZ jami: ${n(m.verify.bs)} / ${n(m.verify.br)}</span>`):'<span class="dl flat">BILLZ bilan solishtirilmadi</span>';
+  const ver=S.scope!=='all'?'':m.verify?(m.verify.ok?'<span class="dl up">✓ BILLZ jami bilan mos</span>':`<span class="dl dn" style="white-space:normal">⚠ BILLZ jami: ${n(m.verify.bs)} sotuv / ${n(m.verify.br)} qaytish · bu yerda: ${n(m.verify.ss)} / ${n(m.verify.sr)}</span>`):'';
   const k=[['Sotildi',s.sold],['Qaytarildi',s.ret],['Sof savdo',s.net],['Kirim',s.imp],['Hisobdan chiqarildi',s.off]].map(([l,v])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${n(v)}</div></div>`).join('');
-  let h=`<section class="card fade"><div class="row"><h2 style="margin:0">${esc(m.label)}</h2>${ver}</div><div class="kpis" style="margin-top:12px">${k}</div></section>`;
+  let h=`<section class="card fade"><div class="row"><h2 style="margin:0">${esc(m.label)}</h2></div>${ver?`<div style="margin-top:8px">${ver}</div>`:''}<div class="kpis" style="margin-top:12px">${k}</div></section>`;
   if(m.days>1){const d=s.daily,mx=Math.max(1,...d.s);let r='';for(let i=0;i<m.days;i++){const dt=addDays(m.from,i);r+=`<div class="cl" style="grid-template-columns:48px 1fr auto"><span>${dt.slice(8)}.${dt.slice(5,7)}</span><div class="bar c"><i style="width:${(d.s[i]||0)/mx*100}%"></i></div><b>${n(d.s[i])}</b></div>`}h+=`<section class="card fade"><h2>Kunlar bo‘yicha sotuv</h2>${r}</section>`}
   if(S.scope==='all'&&a.stores)h+=`<section class="card fade"><h2>Do‘konlar<small>tegib tanlang</small></h2>${a.stores.map(x=>`<button class="st" data-s="${x.key}"><div class="row"><span class="n">${esc(x.name)}</span><span><b>${n(x.sold)}</b> <span class="mu">sotildi</span></span></div><div class="mu" style="font-size:12px">qaytdi ${n(x.ret)} · kirim ${n(x.imp)} · chiqarildi ${n(x.off)}</div></button>`).join('')}</section>`;
   const top=s.top.slice(0,10);

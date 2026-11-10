@@ -1,18 +1,17 @@
-// Warm Mini App dashboard data only. This scheduled job never sends chat messages or photos.
 import core from '../lib/telegram-report-core.cjs';
-export const config = { schedule: '*/30 4-18 * * *' };
+
+// Keeps the Mini App fast: every 20 minutes (08:00-24:00 Tashkent) rebuilds today, this week, yesterday and this month
+// in the background, so opening the dashboard shows ready numbers instead of waiting for BILLZ.
+export const config = { schedule: '*/20 3-19 * * *' };
 
 export default async function dashWarm() {
-  const token = String(process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_API_TOKEN || '').trim();
-  const siteUrl = String(process.env.URL || process.env.DEPLOY_PRIME_URL || '').replace(/\/$/, '');
-  if (!token || !siteUrl) { console.log('Dashboard warm-up skipped: bot token or site URL missing.'); return; }
   const d = core.dashDefaults();
-  const months = [...new Set([d.a, d.b, d.wa, d.wb].filter(core.validMonth))];
-  const r = await fetch(`${siteUrl}/.netlify/functions/daily-telegram-report-background`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trigger: 'dash', months, requestedAt: new Date().toISOString() }),
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!r.ok) throw new Error(`Could not start the dashboard cache warm-up (${r.status}).`);
+  const keys = [d.da, d.wa, d.db, core.dashOptions()[0].key].filter(core.validMonth);
+  for (const k of keys) {
+    try {
+      const todo = await core.dashClaimBuilds([k], false);
+      if (todo.length) { const t = Date.now(); await core.dashBuild(k); console.log('Dashboard warmed:', k, Date.now() - t, 'ms'); }
+    } catch (e) { console.error('Dashboard warm failed:', k, String(e && e.message)); }
+  }
+  return new Response('ok');
 }
