@@ -2,8 +2,6 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Stock Book</title>
-<!-- STOCKBOOK RELEASE: 1.4.0 | 2026-11-10-stockbook-cache-refresh-r4 -->
-<meta name="stockbook-release" content="2026-11-10-stockbook-cache-refresh-r4">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>window.XLSX||document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>')</script>
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -604,7 +602,7 @@ html[data-fx="off"] :is(.stile,.dr-fin-card):hover{transform:none}
   <div id="bzout"></div>
   <details style="margin-top:16px;border-top:1px solid var(--bd);padding-top:12px">
    <summary style="cursor:pointer;font-weight:750">Repair sales: compare with BILLZ and remove duplicates</summary>
-   <p class="mu">Compares BILLZ-synced sales in Stock Book with BILLZ for every store and date, including gross sales and returns separately. Manual sales are not archived. Where a day differs, only the BILLZ-synced rows are archived (they stay in Deleted and in a backup file that downloads first) and BILLZ sales are loaded again.</p>
+   <p class="mu">Compares the sales saved in Stock Book with BILLZ for every store and date. Where a day is different, the saved copies of that store-day are archived (they stay in Deleted and in a backup file that downloads first) and BILLZ sales are loaded again.</p>
    <div class="row3" style="margin-top:10px"><div><label>From</label><input id="rpf" type="date"></div><div><label>To</label><input id="rpt" type="date"></div></div>
    <div class="xl" style="margin-top:12px"><button class="btn" id="rpc">Check (nothing changes)</button><button class="btn pri" id="rpg" hidden>Fix the differences</button></div>
    <p class="mu" id="rpm" style="margin-top:8px" aria-live="polite"></p><div id="rpo"></div>
@@ -681,14 +679,14 @@ const today=()=>iso(new Date());
 const fdt=ts=>{const d=new Date(ts);return pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())};
 const tnm=(t,ts)=>{const d=new Date(ts);return ({in:'Import ',out:'Sale ',rem:'Removal '}[t]||'Transfer ')+d.getFullYear()+'.'+pad(d.getMonth()+1)+'.'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())};
 const ln=l=>l==='Main'?'Main place (old records)':l;
-const vk=x=>[x.sku||x.art||x.bc||(x.productId?'id:'+String(x.productId):''),x.color||'',x.size||''].join('|').toLowerCase();
+const vk=x=>[x.sku||x.art||x.bc||'',x.color||'',x.size||''].join('|').toLowerCase();
 const SZ=['xxs','xs','s','m','l','xl','xxl','xxxl','2xl','3xl'];
 const szKey=v=>{const t=String(v||'').toLowerCase().trim(),i=SZ.indexOf(t);if(i>=0)return[0,i,''];const n=parseFloat(t);return isNaN(n)?[2,0,t]:[1,n,t]};
 const szCmp=(a,b)=>{const x=szKey(a),y=szKey(b);return x[0]-y[0]||x[1]-y[1]||x[2].localeCompare(y[2])};
 function stockOf(moves){
  const m={};
  for(const x of [...moves].reverse()){
-  if(x.ns&&!(x.sku||x.art||x.bc||x.productId))continue;
+  if(x.ns&&!(x.sku||x.art||x.bc))continue;
   const k=vk(x),s=m[k]||(m[k]={k,loc:{},ts:0,ph:!!x.ns});if(!x.ns)s.ph=false;
   if(!x.ns||s.ph)for(const f of[...FL,'photo'])if(x[f])s[f]=x[f];
   if(x.parent_id)s.parent_id=x.parent_id;if(x.productId)s.productId=x.productId;
@@ -697,7 +695,7 @@ function stockOf(moves){
  }
  const M=bzm();
  for(const s of Object.values(m)){
-  const mm=(s.productId&&M['id:'+s.productId])||(s.bc&&M[s.bc])||(s.sku&&M['sku:'+s.sku])||(s.art&&M['sku:'+s.art]);
+  const mm=(s.bc&&M[s.bc])||(s.sku&&M['sku:'+s.sku])||(s.art&&M['sku:'+s.art])||(s.productId&&M['id:'+s.productId]);
   if(mm){if(!s.color&&mm[0])s.color=mm[0];if(!s.photo&&mm[1])s.photo=mm[1];if(!s.size&&mm[2])s.size=mm[2];if(!s.brand&&mm[3])s.brand=mm[3];if(!s.cat&&mm[4])s.cat=mm[4];if(!s.name&&mm[5])s.name=mm[5];if(!s.productId&&mm[8])s.productId=mm[8];if(!s.parent_id&&mm[9]&&mm[9]!=='00000000-0000-0000-0000-000000000000')s.parent_id=mm[9]}
   s.neg={};for(const z in s.loc)if(s.loc[z]<0){s.neg[z]=s.loc[z];s.loc[z]=0}
  }
@@ -706,17 +704,17 @@ function stockOf(moves){
  const index=(x)=>{if(x.bc&&!byBC.has(String(x.bc)))byBC.set(String(x.bc),x);if(x.productId&&!byID.has(String(x.productId)))byID.set(String(x.productId),x);const k=vk(x);if(!byKey.has(k))byKey.set(k,x);const sk=String(x.sku||x.art||'');if(sk){if(!bySku.has(sk))bySku.set(sk,[]);if(!bySku.get(sk).includes(x))bySku.get(sk).push(x)}};
  Object.values(m).forEach(index);
  for(const v of _bv){
-  const sameID=v.productId?byID.get(String(v.productId)):null;
-  const sameBC=!sameID&&v.bc?byBC.get(String(v.bc)):null;
+  const sameBC=v.bc?byBC.get(String(v.bc)):null;
+  const sameID=!sameBC&&v.productId?byID.get(String(v.productId)):null;
   const exactKey=byKey.get(vk(v));
-  let s=sameID||sameBC||exactKey;
+  let s=sameBC||sameID||exactKey;
   if(!s&&(v.sku||v.art)){
    const candidates=bySku.get(String(v.sku||v.art))||[];
    const eligible=candidates.filter(x=>(!x.color||norm(x.color)===norm(v.color))&&(!x.size||norm(x.size)===norm(v.size)));
    if(eligible.length===1)s=eligible[0];
   }
   if(s){
-   const strong=!!(sameID||sameBC||exactKey);
+   const strong=!!(sameBC||sameID||exactKey);
    if(v.color&&(strong||!s.color))s.color=v.color;if(v.size&&(strong||!s.size))s.size=v.size;
    if(v.bc&&!s.bc){s.bc=v.bc;byBC.set(String(v.bc),s)}if(v.sku&&!s.sku)s.sku=v.sku;if(v.art&&!s.art)s.art=v.art;
    if(v.photo&&!s.photo)s.photo=v.photo;if(v.brand&&!s.brand)s.brand=v.brand;if(v.cat&&!s.cat)s.cat=v.cat;if(v.name&&!s.name)s.name=v.name;
@@ -756,7 +754,7 @@ const CHV=o=>`<span class="chv${o?' o':''}">${IC('<path d="m9 6 6 6-6 6"/>')}</s
 const IMGI=IC('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-8 8"/>');
 const thumb=p=>p?`<img class="pic" src="${esc(p)}" alt="" loading="lazy" decoding="async">`:`<div class="phd">${IMGI}</div>`;
 const meta=s=>[s.sku||s.art,s.brand,s.color,s.size].filter(Boolean).map(esc).join(' · ');
-const pick=s=>({...Object.fromEntries(FL.map(f=>[f,s[f]||''])),...(s&&s.productId?{productId:String(s.productId)}:{}),...(s&&s.parent_id?{parent_id:String(s.parent_id)}:{})});
+const pick=s=>Object.fromEntries(FL.map(f=>[f,s[f]||'']));
 const say=(sel,t,b)=>{const m=$(sel);m.textContent=t;m.className=b?'bad':'mu'};
 
 let tmode='move',auth,fs,me='',unsubs=[],moves=[],STK={},TREE=[],view='cat',prevView='cat';
@@ -767,7 +765,7 @@ const TH=[['indigo','#12163a','#2fc4b2'],['samarkand','#eef5f5','#0c8f84'],['gra
 const setLook=(k,v)=>{document.documentElement.dataset[k]=v;try{localStorage.setItem('lk_'+k,v)}catch(e){}};
 ['dens','shape','fx'].forEach(k=>{let v='';try{v=localStorage.getItem('lk_'+k)}catch(e){}setLook(k,v||(k==='dens'?'comfy':k==='shape'?'round':'on'))});
 const flyHtml=()=>{const d=document.documentElement.dataset,seg=(a,k,o)=>`<div class="sg">${o.map(([v,n])=>`<button class="btn sm${d[k]===v?' pri':''}" data-${a}="${v}">${n}</button>`).join('')}</div>`;
- return `<div class="mu" style="padding:8px 10px 0">Theme</div><div class="sws">${TH.map(([k,b,c])=>`<button class="swb${d.theme===k?' on':''}" data-th="${k}" aria-label="${k}" title="${k}" style="background:linear-gradient(135deg,${b} 50%,${c} 50%)"></button>`).join('')}</div><div class="mu" style="padding:8px 10px 0">Upload a theme image (applies instantly, no deploy)</div><div class="custom-theme-controls"><label class="theme-upload-btn" for="theme-upload-file">🎨 Choose theme image</label><input id="theme-upload-file" type="file" accept="image/*,.json,application/json" hidden><button type="button" class="btn sm" id="theme-reset">Reset theme</button></div><div class="mu" id="theme-upload-status" style="padding:0 10px 6px">Choose a screenshot or theme image to extract its colors.</div><div class="mu" style="padding:8px 10px 0">Language / Til / Язык</div><div class="sg"><button class="btn sm${currentLanguage==='uz'?' pri':''}" data-lang="uz">O‘zbekcha</button><button class="btn sm${currentLanguage==='en'?' pri':''}" data-lang="en">English</button><button class="btn sm${currentLanguage==='ru'?' pri':''}" data-lang="ru">Русский</button></div><div class="mu" style="padding:4px 10px 0">Spacing</div>${seg('dn','dens',[['comfy','Comfortable'],['compact','Compact']])}<div class="mu" style="padding:4px 10px 0">Corners</div>${seg('sh','shape',[['round','Round'],['square','Square']])}<div class=\"mu\" style=\"padding:4px 10px 0\">3D effects</div>${seg('fx','fx',[['on','On'],['off','Off']])}<button class="fi" id="lo-all">Log out all devices</button><button class="fi" id="lo">Log out (${esc(me)})</button>`};
+ return `<div class="mu" style="padding:8px 10px 0">Theme</div><div class="sws">${TH.map(([k,b,c])=>`<button class="swb${d.theme===k?' on':''}" data-th="${k}" aria-label="${k}" title="${k}" style="background:linear-gradient(135deg,${b} 50%,${c} 50%)"></button>`).join('')}</div><div class="mu" style="padding:8px 10px 0">Upload a theme image (applies instantly, no deploy)</div><div class="custom-theme-controls"><label class="theme-upload-btn" for="theme-upload-file">🎨 Choose theme image</label><input id="theme-upload-file" type="file" accept="image/*,.json,application/json" hidden><button type="button" class="btn sm" id="theme-reset">Reset theme</button></div><div class="mu" id="theme-upload-status" style="padding:0 10px 6px">Choose a screenshot or theme image to extract its colors.</div><div class="mu" style="padding:8px 10px 0">Language / Til / Язык</div><div class="sg"><button class="btn sm${currentLanguage==='uz'?' pri':''}" data-lang="uz">O‘zbekcha</button><button class="btn sm${currentLanguage==='en'?' pri':''}" data-lang="en">English</button><button class="btn sm${currentLanguage==='ru'?' pri':''}" data-lang="ru">Русский</button></div><div class="mu" style="padding:4px 10px 0">Spacing</div>${seg('dn','dens',[['comfy','Comfortable'],['compact','Compact']])}<div class="mu" style="padding:4px 10px 0">Corners</div>${seg('sh','shape',[['round','Round'],['square','Square']])}<div class=\"mu\" style=\"padding:4px 10px 0\">3D effects</div>${seg('fx','fx',[['on','On'],['off','Off']])}<button class="fi" id="lo">Log out (${esc(me)})</button>`};
 function setTheme(t,clearCustom=false){const H=document.documentElement;if(t!=='custom'&&clearCustom){['bg','side','card','row','c2','tx','mu','bd','ac','on','ok','okbg','bad','s2','s3','s4','s5'].forEach(k=>H.style.removeProperty('--'+k));try{localStorage.removeItem('sb_custom_palette')}catch(e){}}if(H.dataset.theme&&H.dataset.theme!==t){H.classList.add('tt');clearTimeout(window._tt);window._tt=setTimeout(()=>H.classList.remove('tt'),450)}H.dataset.theme=t;const mt=document.querySelector('meta[name="theme-color"]');if(mt)mt.content=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()||mt.content;try{localStorage.setItem('th2',t)}catch(e){}}
 let cur='indigo';try{cur=localStorage.getItem('th2')||cur}catch(e){}if(!TH.some(t=>t[0]===cur))cur='indigo';setTheme(cur);
 function applyCustomPalette(p,persist=true){
@@ -900,7 +898,7 @@ function csv(t){const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"',rows=
 /* ---------- shared: images, Excel, saving ---------- */
 function shrink(f){return new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,700/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);r(c.toDataURL('image/jpeg',.6))};i.src=URL.createObjectURL(f)})}
 const AL={store:['store','shop','branch','dokon','магазин'],sku:['sku'],art:['article','art','artikul','артикул'],name:['name','product','productname','title','nomi','nom','название','наименование','наименованиетовара'],cat:['category','cat','toifa','категория'],brand:['brand','brend','бренд'],color:['color','colour','rang','цвет'],size:['size','olcham','ulcham','razmer','размер'],qty:['qty','quantity','amount','count','howmuch','pieces','miqdori','soni','количество','колво','кол','продано','колвосписания'],bc:['barcode','shtrixkod','штрихкод','баркод'],from:['отправитель'],to:['получатель'],status:['статус'],bid:['ид'],sdate:['датаотправки'],idate:['датаимпорта','дата'],iid:['идимпорта','idимпорта']};
-const nk=s=>String(s).toLowerCase().replace(/^\s*v_/,'').replace(/[^\p{L}]/gu,''),sn=v=>String(v||'').normalize('NFKC').toLowerCase().replace(/[’‘`ʻʼ]/g,"'").replace(/[^\p{L}\p{N}]/gu,'');
+const nk=s=>String(s).toLowerCase().replace(/^\s*v_/,'').replace(/[^\p{L}]/gu,''),sn=v=>String(v||'').toLowerCase().replace(/\s+/g,' ').trim();
 async function readX(file){if(!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))throw new Error('Only Excel files (.xlsx or .xls) are accepted.');
  if(typeof XLSX==='undefined')throw new Error('The Excel reader did not load. Check your internet and refresh the page.');
  const wb=XLSX.read(await file.arrayBuffer()),al=Object.values(AL).flat();let best=null;
@@ -914,32 +912,14 @@ async function readX(file){if(!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))throw 
 const BZ=['НАИМЕНОВАНИЕ','АРТИКУЛ','БАРКОД','КОЛ-ВО','ЦЕНА ПОСТАВКИ (UZS)','РОЗНИЧНАЯ ЦЕНА (UZS)','КАТЕГОРИЯ','БРЕНД','ЕДИНИЦА ИЗМЕРЕНИЯ','ПОСТАВЩИК','ОПИСАНИЕ','ОПТОВАЯ ЦЕНА (UZS)','V_1920205017610','V_Размер','V_Цвет','Под категория','Под категория '];
 const tpl=(cols,name)=>{const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([cols]),'Sheet1');XLSX.writeFile(wb,name)};
 const fpOf=recs=>{const t=recs.map(r=>[r.type,r.from,r.to,r.date,vk(r),r.qty].join('~')).sort().join('|');let h=0;for(const c of t)h=(h*31+c.charCodeAt(0))|0;return recs.length+'.'+h};
-// BILLZ source rows receive deterministic IDs. If a 100-row Firestore batch succeeds and the next
-// batch fails, retrying writes to the same IDs instead of treating the first batch as the whole import.
-const isBillzMovement=r=>!!(r&&(r.bz||r.note==='Billz sync'));
-const billzLineKey=r=>[r.type||'',r.from||'',r.to||'',r.date||'',vk(r),Math.round(+r.qty||0),r.ret?'return':'sale',r.ns?'nonstock':'stock',r.seller||'',r.bz||'',r.note==='Billz sync'?'billz-sales':''].join('~');
-const stableHash=value=>{let a=0x811c9dc5,b=0x9e3779b9;for(let i=0;i<value.length;i++){const c=value.charCodeAt(i);a=Math.imul(a^c,0x01000193);b=Math.imul(b^c,0x85ebca6b)}return (a>>>0).toString(16).padStart(8,'0')+(b>>>0).toString(16).padStart(8,'0')};
-const stableGroupId=(prefix,value)=>prefix+'_'+stableHash(String(value));
-async function commit(recs,quiet){
- if(!Array.isArray(recs)||!recs.length)return;
- const fp=fpOf(recs),allBillz=recs.every(isBillzMovement);
- // Keep the legacy whole-upload duplicate prompt for manual/Excel entries. BILLZ entries are
- // deduplicated per source line below, which also makes partial batch retries safe.
- if(!allBillz){const dup=moves.find(m=>m.fp===fp&&!m.del);if(dup&&quiet)return;if(dup&&!confirm('This exact list was already saved on '+fdt(dup.ts)+' by '+(dup.by||'?')+'. Saving it again counts everything twice. Save anyway?'))throw new Error('cancelled')}
- const knownBillz=new Set(moves.filter(m=>!m.del&&isBillzMovement(m)).map(billzLineKey));
- const prepared=[];
- for(const r of recs){
-  if(isBillzMovement(r)){
-   const key=billzLineKey(r);if(knownBillz.has(key))continue;knownBillz.add(key);
-   prepared.push({id:'billz_'+stableHash(key),record:r});
-  }else prepared.push({id:'g'+Date.now()+'_'+Math.random().toString(36).slice(2,12),record:r});
- }
- // Keep each Firestore request small; retrying a partial BILLZ sync is idempotent because its IDs are stable.
- for(let i=0;i<prepared.length;i+=100){const w=writeBatch(fs),base=Date.now();
-  prepared.slice(i,i+100).forEach((item,j)=>w.set(doc(fs,'moves',item.id),{photo:null,br:null,by:me,...item.record,fp,...(isBillzMovement(item.record)?{billzLineKey:billzLineKey(item.record)}:{}),ts:base+i+j}));
-  await w.commit();
- }
-}
+async function commit(recs,quiet){const fp=fpOf(recs),dup=moves.find(m=>m.fp===fp&&!m.del);
+ if(dup&&quiet)return;
+ if(dup&&!confirm('This exact list was already saved on '+fdt(dup.ts)+' by '+(dup.by||'?')+'. Saving it again counts everything twice. Save anyway?'))throw new Error('cancelled');
+ const base=Date.now();
+ // Keep each Firestore request small; large Billz date ranges can contain many sales rows.
+ for(let i=0;i<recs.length;i+=100){const w=writeBatch(fs);
+  recs.slice(i,i+100).forEach((r,j)=>w.set(doc(fs,'moves','g'+base+'_'+(i+j)+Math.random().toString(36).slice(2,5)),{photo:null,br:null,by:me,...r,fp,ts:base+i+j}));
+  await w.commit()}}
 const newId=()=>'t'+Date.now()+Math.random().toString(36).slice(2,7);
 const skList=(sk)=>sk.slice(0,5).map(s=>`<p class="bad" style="font-weight:400;margin:4px 0">${esc(s)}</p>`).join('')+(sk.length>5?`<p class="mu">…and ${sk.length-5} more skipped</p>`:'');
 
@@ -967,7 +947,7 @@ function renderNTR(){const f=$('#tfrom').value,q=$('#tq').value.trim().toLowerCa
 $('#tq').oninput=renderNTR;
 $('#tfrom').onchange=$('#tto').onchange=()=>{trPrev='';renderNTR();tLinesHtml()};
 $('#tph').onchange=async e=>{trPhoto=e.target.files[0]?await shrink(e.target.files[0]):null};
-const findVar=r=>{refreshRenderModel();return variantForSale(r)};
+const findVar=r=>{refreshRenderModel();rebuildVariantLookup();if(r.bc&&_variantByBarcode.has(String(r.bc)))return _variantByBarcode.get(String(r.bc));const direct=STK[vk(r)];if(direct)return direct;const sku=String(r.sku||''),art=String(r.art||''),color=String(r.color||''),size=String(r.size||'');if(sku){const exact=_variantBySkuColorSize.get([sku,color,size].join('|').toLowerCase());if(exact)return exact;const a=_variantBySku.get(sku);if(a&&a.length===1)return a[0]}if(art){const exact=_variantByArticleColorSize.get([art,color,size].join('|').toLowerCase());if(exact)return exact;const a=_variantByArticle.get(art);if(a&&a.length===1)return a[0]}return null};
 function addLine(k){const l=trLines.find(x=>x.k===k);if(l)l.qty=Math.min((Math.round(+l.qty)||0)+1,Math.max(1,avail(l)));else trLines.push({k,qty:1});trPrev='';tLinesHtml()}
 $('#tt').onclick=()=>tmode==='out'?tpl(BZ,'sales-template.xlsx'):tpl(['SKU','Article','Color','Size','Quantity'],'transfer-template.xlsx');
 $('#tf').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value='';if(await routeFile(f,''))return;if(tmode==='bz'){bzPrev='<p class="bad">This is not a Billz transfer report.</p>';bzRender();return}let rows;
@@ -995,7 +975,7 @@ $('#tgo').onclick=async()=>{if(tmode==='bz')return bzSave();const f=$('#tfrom').
 /* ---------- new sale: "Sales by sellers" report ---------- */
 const SM={store:['магазин','store','shop','dokon'],date:['дата','date','sana'],seller:['продавец','seller','sotuvchi','cashier'],name:['наименование','название','name','nomi','product'],art:['артикул','article','art','artikul'],sku:['sku'],bc:['баркод','штрихкод','barcode','shtrixkod'],cat:['категория','category','toifa'],sold:['колвопроданных','sold','soldqty'],ret:['колвовозвращенных','returned','returnedqty'],net:['проданозавычетомвозвратов','net','netsold']};
 const xDate=v=>{if(typeof v==='number'&&v>20000){const o=XLSX.SSF.parse_date_code(v);return o?o.y+'-'+pad(o.m)+'-'+pad(o.d):''}
- const t=String(v==null?'':v).trim(),a=t.match(/^(\d{4}-\d{2}-\d{2})(?:[T ](.*))?$/);if(a){const tail=a[2]||'';if(!tail||!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(tail))return a[1];const d=new Date(t);if(!Number.isNaN(d.getTime()))return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(d)}const b=t.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);return b?b[3]+'-'+pad(b[2])+'-'+pad(b[1]):''};
+ const t=String(v==null?'':v),a=t.match(/(\d{4})-(\d{2})-(\d{2})/);if(a)return a[0];const b=t.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);return b?b[3]+'-'+pad(b[2])+'-'+pad(b[1]):''};
 async function readSales(file){if(!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))throw new Error('Only Excel files (.xlsx or .xls) are accepted.');
  if(typeof XLSX==='undefined')throw new Error('The Excel reader did not load. Check your internet and refresh the page.');
  const wb=XLSX.read(await file.arrayBuffer());let best=null;
@@ -1006,15 +986,15 @@ async function readSales(file){if(!/\.(xlsx|xls|xlsm|xlsb)$/i.test(file.name))th
  if(X.store<0||(X.bc<0&&X.art<0&&X.sku<0)||(X.net<0&&X.sold<0))throw new Error('The report needs at least these columns: Магазин, Артикул or Баркод, and Кол-во проданных or Продано за вычетом возвратов.');
  const g=(r,f)=>X[f]<0?'':r[X[f]],num=v=>{const n=parseFloat(String(v).replace(/\s/g,'').replace(',','.'));return isNaN(n)?0:n};
  return best.a.slice(best.i+1).map((r,j)=>{const o={_r:best.i+j+2};['store','seller','name','art','sku','bc','cat'].forEach(f=>o[f]=String(g(r,f)==null?'':g(r,f)).trim());
-  o.date=xDate(g(r,'date'));const soldRaw=X.sold>=0&&String(g(r,'sold')).trim()!==''?num(g(r,'sold')):null,retRaw=X.ret>=0&&String(g(r,'ret')).trim()!==''?num(g(r,'ret')):null;const hasParts=soldRaw!==null||retRaw!==null;const net=X.net>=0&&String(g(r,'net')).trim()!==''?num(g(r,'net')):(soldRaw??0)-(retRaw??0);o.q=Math.round(net);if(hasParts){o.soldQty=Math.max(0,Math.round(soldRaw||0));o.returnedQty=Math.max(0,Math.round(retRaw||0))}return o}).filter(o=>o.store||o.bc||o.art||o.sku)}
+  o.date=xDate(g(r,'date'));const net=X.net>=0&&String(g(r,'net')).trim()!==''?num(g(r,'net')):num(g(r,'sold'))-num(g(r,'ret'));o.q=Math.round(net);return o}).filter(o=>o.store||o.bc||o.art||o.sku)}
 let soLines=[],soSk=[],soFile='',soInfo='';
 function openNSO(){prevView=view==='nso'?'out':view;soLines=[];soSk=[];soFile='';soInfo='';$('#smsg').textContent='';$('#sprev').innerHTML='';go('nso')}
-function soIndex(){const bc={},art={},pid={};for(const v of Object.values(STK)){if(v.ph&&!v.billz)continue;if(v.productId)pid[String(v.productId)]=v;if(v.bc&&!bc[v.bc])bc[v.bc]=v;for(const a of new Set([v.sku,v.art].filter(Boolean).map(x=>x.toLowerCase())))(art[a]=art[a]||[]).push(v)}return{bc,art,pid}}
-function soMatch(r,ix){const pid=r.productId||r.product_id||r.pid;if(pid&&ix.pid[String(pid)])return ix.pid[String(pid)];const v=variantForSale({product_id:pid,productId:pid,bc:r.bc,sku:r.sku||'',art:r.art||'',color:r.color||'',size:r.size||''});if(v)return v;const a=(r.art||r.sku||'').toLowerCase();if(a&&ix.art[a]){const L=ix.art[a];return L.length===1?L[0]:'many'}return null}
+function soIndex(){const bc={},art={};for(const v of Object.values(STK)){if(v.ph)continue;if(v.bc&&!bc[v.bc])bc[v.bc]=v;for(const a of new Set([v.sku,v.art].filter(Boolean).map(x=>x.toLowerCase())))(art[a]=art[a]||[]).push(v)}return{bc,art}}
+function soMatch(r,ix){if(r.bc&&ix.bc[r.bc])return ix.bc[r.bc];const a=(r.art||r.sku||'').toLowerCase();if(a&&ix.art[a]){const L=ix.art[a];return L.length===1?L[0]:'many'}return null}
 function renderNSO(){const run={},by={};let nS=0,nR=0;
- soLines.forEach(l=>{const sold=l.soldQty!=null?Math.max(0,+l.soldQty||0):Math.max(0,+l.qty||0),returned=l.returnedQty!=null?Math.max(0,+l.returnedQty||0):Math.max(0,-(+l.qty||0));if(l.ns){l.av=0;l.short=false;if(returned)nR++;by[l.store]=(by[l.store]||0)+l.qty;return}const k=l.k+'|'+l.store,have=k in run?run[k]:((STK[l.k]&&STK[l.k].loc[l.store])||0);l.av=Math.max(0,have);l.short=sold>0&&have<sold;run[k]=have-sold+returned;if(l.short)nS++;if(returned)nR++;by[l.store]=(by[l.store]||0)+l.qty});
+ soLines.forEach(l=>{if(l.ns){l.av=0;l.short=false;if(l.qty<0)nR++;by[l.store]=(by[l.store]||0)+l.qty;return}const k=l.k+'|'+l.store,have=k in run?run[k]:((STK[l.k]&&STK[l.k].loc[l.store])||0);l.av=Math.max(0,have);l.short=l.qty>0&&have<l.qty;run[k]=have-l.qty;if(l.short)nS++;if(l.qty<0)nR++;by[l.store]=(by[l.store]||0)+l.qty});
  const tot=soLines.reduce((a,l)=>a+l.qty,0);
- $('#slines').innerHTML=soLines.length?`<div class="tw"><table class="sm"><thead><tr><th>Store</th><th>Item</th><th>Seller</th><th>Quantity</th><th></th></tr></thead><tbody>${soLines.map((l,i)=>`<tr class="r z${i%2}"><td><b>${esc(l.store)}</b><div class="mu">${l.date.split('-').reverse().join('.')}</div></td><td><b>${esc(l.name||l.sku||l.art)}</b><div class="mu">${meta(l.ns?l.item:(STK[l.k]||l))}${l.ns?' · <span class="pill" style="background:var(--c2);color:var(--mu)">Not in system: added to catalog with 0 pcs</span>':''}</div>${l.short?`<div class="bad" style="font-weight:400;font-size:12px">Only ${l.av} in ${esc(l.store)}: the extra is saved as sold, stock stays 0</div>`:''}</td><td class="mu">${esc(l.seller||'-')}</td><td>${(l.returnedQty||l.qty<0)?'Sold '+(l.soldQty||0)+' · Return '+(l.returnedQty||Math.abs(l.qty))+' · Net '+l.qty:(l.soldQty!=null?l.soldQty:l.qty)}</td><td><button class="btn sm" data-srm="${i}">Remove</button></td></tr>`).join('')}</tbody></table></div><div class="mu" style="margin-top:8px">${Object.entries(by).map(([z,q])=>`<b>${esc(z)}</b> ${q} pcs`).join(' · ')}</div>${nS?`<div class="bad" style="font-weight:400;margin-top:6px">${nS} line${nS>1?'s':''} sell more than the store has in stock. They are marked above.</div>`:''}`
+ $('#slines').innerHTML=soLines.length?`<div class="tw"><table class="sm"><thead><tr><th>Store</th><th>Item</th><th>Seller</th><th>Quantity</th><th></th></tr></thead><tbody>${soLines.map((l,i)=>`<tr class="r z${i%2}"><td><b>${esc(l.store)}</b><div class="mu">${l.date.split('-').reverse().join('.')}</div></td><td><b>${esc(l.name||l.sku||l.art)}</b><div class="mu">${meta(l.ns?l.item:(STK[l.k]||l))}${l.ns?' · <span class="pill" style="background:var(--c2);color:var(--mu)">Not in system: added to catalog with 0 pcs</span>':''}</div>${l.short?`<div class="bad" style="font-weight:400;font-size:12px">Only ${l.av} in ${esc(l.store)}: the extra is saved as sold, stock stays 0</div>`:''}</td><td class="mu">${esc(l.seller||'-')}</td><td>${l.qty<0?'<span class="pill" style="background:rgba(255,123,132,.16);color:var(--bad);margin-right:6px">Return</span>'+(-l.qty):l.qty}</td><td><button class="btn sm" data-srm="${i}">Remove</button></td></tr>`).join('')}</tbody></table></div><div class="mu" style="margin-top:8px">${Object.entries(by).map(([z,q])=>`<b>${esc(z)}</b> ${q} pcs`).join(' · ')}</div>${nS?`<div class="bad" style="font-weight:400;margin-top:6px">${nS} line${nS>1?'s':''} sell more than the store has in stock. They are marked above.</div>`:''}`
   :'<div class="empty">No sales yet. Upload your sales report above.</div>';
  $('#sgo').textContent='Save sales'+(soLines.length?' ('+tot+' pcs)':'')}
 $('#st').onclick=()=>tpl(['Магазин','Дата','Продавец','Наименование','Артикул','Баркод','Категория','Кол-во проданных','Кол-во возвращенных','Продано за вычетом возвратов'],'sales-template.xlsx');
@@ -1024,25 +1004,23 @@ async function loadSales(f,redir,pre){let rows;
  try{rows=pre||await readSales(f)}catch(x){$('#sprev').innerHTML='<p class="bad">'+esc(x.message||'Could not read this file.')+'</p>';return}
  refreshRenderModel();const ix=soIndex(),sk=[],map={},add=[];
  rows.forEach((r,i)=>{const w='Row '+(r._r||i+2)+': ',st=STORES.find(z=>sn(z)===sn(r.store));
-  const soldPart=Math.max(0,Math.round(r.soldQty!=null?r.soldQty:r.q)),returnPart=Math.max(0,Math.round(r.returnedQty!=null?r.returnedQty:-r.q));if(!r.q&&!soldPart&&!returnPart)return;
+  if(!r.q)return;
   if(!st){sk.push(w+'store "'+(r.store||'empty')+'" not found');return}
   const v=soMatch(r,ix);
   if(!v){if(!(r.name||r.art||r.bc||r.sku)){sk.push(w+'item has no name, article or barcode');return}
-   const it={sku:r.sku,art:r.art,bc:r.bc,name:r.name,brand:'',cat:r.cat,color:r.color||'',size:r.size||'',...(r.productId||r.product_id?{productId:String(r.productId||r.product_id)}:{})},nkey='ns|'+(r.productId||r.bc||r.art||r.sku||r.name).toLowerCase(),date=r.date||today(),key=[st,date,nkey,r.seller].join('|');
-   if(map[key]){map[key].qty+=r.q;map[key].soldQty+=soldPart;map[key].returnedQty+=returnPart}else{const l={k:nkey,ns:true,item:it,store:st,date,seller:r.seller,qty:r.q,soldQty:soldPart,returnedQty:returnPart,name:r.name||r.art||r.bc};map[key]=l;add.push(l)}return}
+   const it={sku:r.sku,art:r.art,bc:r.bc,name:r.name,brand:'',cat:r.cat,color:'',size:''},nkey='ns|'+(r.bc||r.art||r.sku||r.name).toLowerCase(),date=r.date||today(),key=[st,date,nkey,r.seller].join('|');
+   if(map[key])map[key].qty+=r.q;else{const l={k:nkey,ns:true,item:it,store:st,date,seller:r.seller,qty:r.q,name:r.name||r.art||r.bc};map[key]=l;add.push(l)}return}
   if(v==='many'){sk.push(w+(r.name||r.art)+' has several colors or sizes and no matching barcode');return}
   const date=r.date||today(),key=[st,date,v.k,r.seller].join('|');
-  if(map[key]){map[key].qty+=r.q;map[key].soldQty+=soldPart;map[key].returnedQty+=returnPart}else{const l={k:v.k,store:st,date,seller:r.seller,qty:r.q,soldQty:soldPart,returnedQty:returnPart,name:v.name||r.name};map[key]=l;add.push(l)}});
- /* Reconcile gross sold and returns separately. This also repairs older net-only Billz rows without deleting history. */
- const nsK=x=>'ns|'+(x.productId||x.bc||x.art||x.sku||x.name||'').toLowerCase(),sg=(st,d,k,se)=>[st,d,k,se||''].join('|'),have={};
- const bucket=g=>have[g]||(have[g]={sold:0,returned:0}),billzSource=String(f&&f.name||'').toLowerCase()==='billz';
- live().forEach(x=>{if(x.type!=='out'||(billzSource&&!(x.note==='Billz sync'||String(x.bz||'').startsWith('nightly-sale|'))))return;const g=sg(x.from,x.date,x.ns?nsK(x):vk(x),x.seller),h=bucket(g),q=+x.qty||0;if(q<0||x.ret)h.returned+=Math.abs(q);else h.sold+=q});
- soLines.forEach(l=>{const g=sg(l.store,l.date,l.k,l.seller),h=bucket(g);h.sold+=Math.max(0,+l.soldQty||0);h.returned+=Math.max(0,+l.returnedQty||0)});
+  if(map[key])map[key].qty+=r.q;else{const l={k:v.k,store:st,date,seller:r.seller,qty:r.q,name:v.name||r.name};map[key]=l;add.push(l)}});
+ /* skip what was already saved: compare file totals per store+date+item+seller with saved sales, add only the difference */
+ const nsK=x=>'ns|'+(x.bc||x.art||x.sku||x.name||'').toLowerCase(),sg=(st,d,k,se)=>[st,d,k,se||''].join('|'),have={};
+ live().forEach(x=>{if(x.type!=='out')return;const g=sg(x.from,x.date,x.ns?nsK(x):vk(x),x.seller);have[g]=(have[g]||0)+(+x.qty||0)});
+ soLines.forEach(l=>{const g=sg(l.store,l.date,l.k,l.seller);have[g]=(have[g]||0)+l.qty});
  let dup=0,dupQ=0;
- const keep=add.filter(l=>{const g=sg(l.store,l.date,l.k,l.seller),h=have[g]||{sold:0,returned:0},sourceSold=Math.max(0,+l.soldQty||0),sourceRet=Math.max(0,+l.returnedQty||0),dSold=sourceSold-h.sold,dRet=sourceRet-h.returned;
-  if(dSold<=0&&dRet<=0){dup+=h.sold+h.returned;dupQ++;if(dSold<0||dRet<0)sk.push((l.name||'Item')+' ('+l.store+', '+l.date.split('-').reverse().join('.')+'): saved sold/return totals exceed the source report; nothing was deleted.');return false}
-  if(dSold<0||dRet<0)sk.push((l.name||'Item')+' ('+l.store+', '+l.date.split('-').reverse().join('.')+'): existing quantity is higher than the latest BILLZ totals; only missing positive differences will be added.');
-  l.soldQty=Math.max(0,dSold);l.returnedQty=Math.max(0,dRet);l.qty=l.soldQty-l.returnedQty;dupQ++;return !!(l.soldQty||l.returnedQty)});
+ const keep=add.filter(l=>{const g=sg(l.store,l.date,l.k,l.seller),h=have[g]||0;if(!h)return l.qty!==0;const d=l.qty-h;
+  if(d>0){dup+=h;dupQ++;l.qty=d;return true}
+  dup+=Math.min(h,l.qty);dupQ++;if(d<0)sk.push((l.name||'Item')+' ('+l.store+', '+l.date.split('-').reverse().join('.')+'): file shows '+l.qty+' but '+h+' already saved, nothing added');return false});
  soLines=soLines.concat(keep).sort((a,b)=>STORES.indexOf(a.store)-STORES.indexOf(b.store));soSk=sk;soFile=f.name;
  const ds=[...new Set(keep.map(l=>l.date))].sort().map(d=>d.split('-').reverse().join('.')),ss=[...new Set(keep.map(l=>l.store))];
  $('#sprev').innerHTML=(redir?'<p class="mu" style="margin:10px 0 0">This is a sales report, so it was opened here in New sale.</p>':'')+`<p class="mu" style="margin:10px 0 0">${keep.length} new lines added from ${esc(f.name)}${dupQ?` · <b>${dupQ} already uploaded before, ${dup} pcs skipped</b>`:''}${ds.length?' · '+ds.join(', '):''}${ss.length?' · '+ss.map(esc).join(', '):''}${keep.some(l=>l.qty<0)?' · includes returns':''}${keep.some(l=>l.ns)?' · '+keep.filter(l=>l.ns).length+' not in system':''}${sk.length?` · <span class="bad">${sk.length} skipped</span>`:''}</p>`+skList(sk);
@@ -1055,13 +1033,11 @@ async function soSave(auto){const m=$('#smsg');refreshRenderModel();
  const nS=soLines.filter(l=>l.short).length;
   if(nS&&!auto&&!confirm(nS+' line(s) sell more than the store has in stock. The extra pieces are saved as sold and the stock stays at 0. Save?'))return 0;
   const ids={},recs=[];
-  soLines.forEach(l=>{const gk=l.store+'|'+l.date;ids[gk]=ids[gk]||(auto?stableGroupId('billz-sale',gk):newId());
-   const b={type:'out',...pick(l.ns?l.item:STK[l.k]),from:l.store,to:'',date:l.date,note:auto?'Billz sync':'Excel: '+soFile,tid:ids[gk],tname:'Sale '+l.date.replace(/-/g,'.')+' · '+l.store,seller:l.seller||'',photo:null};
-   const sold=l.soldQty!=null?Math.max(0,Math.round(+l.soldQty||0)):Math.max(0,Math.round(+l.qty||0)),returned=l.returnedQty!=null?Math.max(0,Math.round(+l.returnedQty||0)):Math.max(0,Math.round(-(+l.qty||0)));
-   if(l.ns){if(sold)recs.push({...b,ns:true,qty:sold});if(returned)recs.push({...b,ns:true,qty:-returned,ret:true});return;}
-   // BILLZ is authoritative during automatic sync: keep the full physical movement, including temporary negative balances.
-   const ded=auto?sold:(l.short?Math.max(0,Math.min(sold,l.av)):sold);
-   if(ded)recs.push({...b,qty:ded});if(sold>ded)recs.push({...b,ns:true,qty:sold-ded});if(returned)recs.push({...b,qty:-returned,ret:true});});
+  soLines.forEach(l=>{const gk=l.store+'|'+l.date;ids[gk]=ids[gk]||newId();
+   const b={type:'out',...pick(l.ns?l.item:STK[l.k]),from:l.store,to:'',date:l.date,note:auto?'Billz sync':'Excel: '+soFile,tid:ids[gk],tname:'Sale '+l.date.replace(/-/g,'.')+' · '+l.store,seller:l.seller||'',photo:null},r=l.qty<0?{ret:true}:{};
+   const ded=!l.ns&&l.short?Math.max(0,Math.min(l.qty,l.av)):l.qty;
+   if(l.ns)recs.push({...b,ns:true,qty:l.qty,...r});
+   else{if(ded)recs.push({...b,qty:ded,...r});if(l.qty>ded)recs.push({...b,ns:true,qty:l.qty-ded})}});
   const b=$('#sgo');b.disabled=true;let n=0;
  try{await commit(recs,auto);n=recs.length;soLines=[];soSk=[];soFile='';m.textContent='';$('#sprev').innerHTML='';if(!auto)go('out')}
  catch(e){m.textContent=e.message==='cancelled'?'Not saved.':'Save failed. Check your internet and try again.';b.disabled=false;if(auto)throw e}b.disabled=false;return n}
@@ -1145,10 +1121,7 @@ function renderDash(){
  const stores=STORES.map((z,i)=>({z,q:Object.values(STK).reduce((a,s)=>a+(s.loc[z]||0),0),sold:byStore[z],c:SC[i%SC.length]})),total=sum(stores.map(s=>Math.max(0,s.q)));
  const zero=prods.filter(o=>o.q<=0).length;
  const head=`<div class="ph1"><div><h1>Overview</h1><div class="mu">${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</div></div><div class="acts"><div class="tabs" style="margin:0">${[7,30,90].map(n=>`<button class="tab${P===n?' on':''}" data-per="${n}">${n} days</button>`).join('')}</div><button class="btn" data-act="tr">New transfer</button><button class="btn" data-act="sale">New sale</button><button class="btn pri" data-act="im">New import</button></div></div>`;
- if(!moves.length){
-  if(typeof _snapshotReady!=='undefined'&&!_snapshotReady){box.innerHTML=head+`<div class="empty"><b>Loading your Stock Book data…</b><p class="mu" style="margin:8px 0 0">Connecting to Firebase and restoring your saved records. On a new device, the first load can take longer.</p><div class="sk" style="margin-top:14px;height:72px"></div></div>`;return}
-  box.innerHTML=head+`<div class="empty">No data yet. Save your first import and this page fills up with charts.<div style="margin-top:12px"><button class="btn pri" data-act="im">New import</button></div></div>`;return
- }
+ if(!moves.length){box.innerHTML=head+`<div class="empty">No data yet. Save your first import and this page fills up with charts.<div style="margin-top:12px"><button class="btn pri" data-act="im">New import</button></div></div>`;return}
  /* hero */
  const hero=`<div class="card c7 d-hero"><div class="ln"><h3>In stock now</h3><span class="mu">${nf(TREE.length)} products</span></div>
   <div class="d-big"${an?` data-cu="${total}"`:''}><span class="cu">${nf(total)}</span><small>pieces in ${STORES.length} stores</small></div>
@@ -1369,20 +1342,20 @@ async function bzAll(path,params,pickRows,limit){const out=[],seenPages=new Set(
  return out}
 const bzCat=r=>{const c=(r.product_categories||r.categories||[])[0];return (c&&c.level_1&&c.level_1[0])||(r.categories_path&&r.categories_path[0])||(c&&c.name)||r.category_name||''};
 const bzSettle=()=>new Promise(r=>setTimeout(r,400));
-async function bzShops(){const shops=await bzAll('/v1/shop',{only_allowed:'true'},j=>j.shops,100),map={};
- shops.forEach(s=>{const z=STORES.find(x=>sn(x)===sn(s.name));if(z)map[s.id]=z});
- const ids=Object.keys(map);if(!ids.length)throw new Error('No Billz shop matches your stores ('+STORES.join(', ')+'). Billz shops: '+shops.map(s=>s.name).join(', '));
- return{map,ids,unused:shops.filter(s=>!map[s.id]).map(s=>s.name)}}
+async function bzShops(){const sh=bzBody(await bzGet('/v1/shop',{page:1,limit:100,only_allowed:'true'})),map={};
+ (sh.shops||[]).forEach(s=>{const z=STORES.find(x=>sn(x)===sn(s.name));if(z)map[s.id]=z});
+ const ids=Object.keys(map);if(!ids.length)throw new Error('No Billz shop matches your stores ('+STORES.join(', ')+'). Billz shops: '+(sh.shops||[]).map(s=>s.name).join(', '));
+ return{map,ids,unused:(sh.shops||[]).filter(s=>!map[s.id]).map(s=>s.name)}}
 
 async function bzImports(map,ids,from,to){
  const rows=await bzAll('/v1/import-report-table',{start_date:from,end_date:to,shop_ids:ids,import_type:'import'},j=>j.rows);
  refreshRenderModel();const saved=new Set(live().filter(x=>x.type==='in'&&x.bz).map(x=>x.bz+'|'+x.to)),legacy=live().filter(x=>x.type==='in'&&!x.bz),seen=new Set(),gid={},recs=[];let dup=0;
  rows.forEach(r=>{const q=Math.round(+r.imported_qty||0),z=map[r.shop_id],date=xDate(r.date);if(q<=0||!z||!date||date<from||date>to)return;
-  const sku=r.product_sku||'',bc=r.product_barcode||'',pid=r.product_id||r.productId||'',importId=r.external_import_id||r.import_id||r.id||'unknown',bz=importId+'|'+(pid||bc||sku),key=bz+'|'+z;
+  const sku=r.product_sku||'',bc=r.product_barcode||'',bz=r.external_import_id+'|'+(bc||sku),key=bz+'|'+z;
   if(saved.has(key)||seen.has(key)){dup++;return}
-  const a=bzAttr(r),v0=findVar({product_id:pid,bc,art:sku,sku:r.product_sku||'',color:a.color,size:a.size}),it=v0?pick(v0):{sku:r.product_sku||'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:a.color,size:a.size,...(pid?{productId:String(pid)}:{})};
+  const v0=findVar({bc,art:sku,sku:'',color:'',size:''}),it=v0?pick(v0):{sku:'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:'',size:''};
   if(legacy.some(x=>x.to===z&&x.date===date&&x.qty===q&&vk(x)===vk(it))){dup++;return}
-  seen.add(key);const g=z+'|'+date+'|'+r.external_import_id;gid[g]=gid[g]||stableGroupId('billz-import',g);
+  seen.add(key);const g=z+'|'+date+'|'+r.external_import_id;gid[g]=gid[g]||newId();
   recs.push({type:'in',...it,to:z,from:'',qty:q,date,note:'Billz import #'+r.external_import_id,tid:gid[g],tname:'Import '+date.replace(/-/g,'.'),photo:null,bz})});
  if(recs.length)await commit(recs,true);return 'Imports: '+recs.length+' added'+(dup?', '+dup+' already there':'')}
 
@@ -1392,10 +1365,10 @@ async function bzTransfers(map,ids,from,to){
  const acc=t=>t.accepted_at&&!/^(0001|1970)/.test(String(t.accepted_at));
  for(const t of tr){const f=map[t.departure_shop_id],tt=map[t.arrival_shop_id];if(!f||!tt)continue;if(!acc(t)){open++;continue}
   const items=await bzAll('/v2/transfer-items/'+t.id,{},j=>j.items,1000),date=xDate(t.created_at)||today();
-  for(const it of items){const p=it.product||it.product_info||{},q=Math.round((+it.arrived_measurement_value)||(+it.transfer_measurement_value)||0),bc=p.barcode||it.product_barcode||'',sku=p.sku||it.product_sku||'',pid=p.id||p.product_id||it.product_id||it.productId||'',a=bzAttr({...it,...p});
-   if(q<=0)continue;const v=findVar({product_id:pid,bc,art:sku,sku,color:a.color,size:a.size});if(!v){miss++;continue}
-   const bz=t.external_id+'|'+(pid||bc||sku),key=bz+'|'+f+'|'+tt+'|'+v.k;if(saved.has(key)){dup++;continue}saved.add(key);
-   const g=f+'|'+tt+'|'+t.external_id;gid[g]=gid[g]||stableGroupId('billz-transfer',g);
+  for(const it of items){const p=it.product||it.product_info||{},q=Math.round((+it.arrived_measurement_value)||(+it.transfer_measurement_value)||0),bc=p.barcode||'',sku=p.sku||'';
+   if(q<=0)continue;const v=findVar({bc,art:sku,sku:'',color:'',size:''});if(!v){miss++;continue}
+   const bz=t.external_id+'|'+(bc||sku),key=bz+'|'+f+'|'+tt+'|'+v.k;if(saved.has(key)){dup++;continue}saved.add(key);
+   const g=f+'|'+tt+'|'+t.external_id;gid[g]=gid[g]||newId();
    recs.push({type:'move',...pick(v),from:f,to:tt,qty:q,date,note:'Billz transfer #'+t.external_id,tid:gid[g],tname:'Transfer '+date.replace(/-/g,'.')+' · '+f+' → '+tt+' #'+t.external_id,bz,photo:null})}}
  if(recs.length)await commit(recs,true);
  return 'Transfers: '+recs.length+' added'+(dup?', '+dup+' already there':'')+(miss?', '+miss+' items not in the system':'')+(open?', '+open+' not accepted yet (skipped)':'')}
@@ -1404,29 +1377,21 @@ async function bzWriteoffs(map,ids,from,to){
  const rows=await bzAll('/v1/write-off-report-table',{start_date:from,end_date:to,shop_ids:ids,currency:'UZS'},j=>j.Items||j.items);
  refreshRenderModel();const saved=new Set(live().filter(x=>x.type==='rem'&&x.bz).map(x=>x.bz+'|'+x.from)),legacy=live().filter(x=>x.type==='rem'&&!x.bz),seen=new Set(),recs=[],gid={};let dup=0,miss=0;
  rows.forEach(r=>{const f=map[r.shop_id],date=xDate(r.created_at),q=Math.round(+r.written_off_measurement_value||0);if(!f||!date||q<=0||date<from||date>to)return;
-  const bc=r.product_barcode||'',sku=r.product_sku||'',pid=r.product_id||r.productId||'',a=bzAttr(r),v=findVar({product_id:pid,bc,art:sku,sku,color:a.color,size:a.size});if(!v){miss++;return}
-  const bz='wo'+(r.write_off_external_id||r.write_off_id)+'|'+(pid||bc||sku),key=bz+'|'+f;
+  const bc=r.product_barcode||'',sku=r.product_sku||'',v=findVar({bc,art:sku,sku:'',color:'',size:''});if(!v){miss++;return}
+  const bz='wo'+(r.write_off_external_id||r.write_off_id)+'|'+(bc||sku),key=bz+'|'+f;
   if(saved.has(key)||seen.has(key)||legacy.some(x=>x.from===f&&x.date===date&&x.qty===q&&vk(x)===v.k)){dup++;return}seen.add(key);
-  const g=f+'|'+(r.write_off_id||date);gid[g]=gid[g]||stableGroupId('billz-writeoff',g);
+  const g=f+'|'+(r.write_off_id||date);gid[g]=gid[g]||newId();
   recs.push({type:'rem',...pick(v),from:f,to:'',qty:q,date,note:[r.write_off_reason,r.description].filter(Boolean).join(' · '),r:'other',tid:gid[g],tname:r.write_off_name||('Write-off '+date.replace(/-/g,'.')),photo:null,bz})});
  if(recs.length)await commit(recs,true);
  return 'Write-offs: '+recs.length+' added'+(dup?', '+dup+' already there':'')+(miss?', '+miss+' items not in the system':'')}
 
 async function bzSales(map,ids,from,to){
  const rows=await bzAll('/v1/product-general-table',{start_date:from,end_date:to,shop_ids:ids,detalization:'day',detalization_by_position:'true',price_type:0,currency:'UZS'},j=>j.products_stats_by_date);
- const rr=[];rows.forEach((r,i)=>{
-  let sold=Math.max(0,Math.round(+r.sold_measurement_value||0)),returned=Math.max(0,Math.round(+r.returned_measurement_value||0));
-  const netRaw=r.net_sold_measurement_value;
-  if(!sold&&!returned&&netRaw!=null&&netRaw!==''){const net=Math.round(+netRaw||0);sold=Math.max(0,net);returned=Math.max(0,-net)}
-  if(!sold&&!returned)return;
-  const a=bzAttr(r),pid=r.product_id||r.productId||'';
-  const net=netRaw!=null&&netRaw!==''?Math.round(+netRaw||0):sold-returned;
-  rr.push({_r:i+1,store:map[r.shop_id]||r.shop_name||'',seller:String(r.seller_full_name||r.seller_name||'').trim(),name:r.product_base_name||r.product_name||'',art:r.product_sku||'',sku:r.product_sku||'',bc:r.product_barcode||'',productId:String(pid||''),product_id:String(pid||''),color:a.color,size:a.size,cat:bzCat(r),date:xDate(r.date),q:net,soldQty:sold,returnedQty:returned});
- });
+ const rr=[];rows.forEach((r,i)=>{const q=Math.round((+r.sold_measurement_value||0)-(+r.returned_measurement_value||0));if(!q)return;
+  rr.push({_r:i+1,store:map[r.shop_id]||r.shop_name||'',seller:String(r.seller_full_name||'').trim(),name:r.product_base_name||r.product_name||'',art:r.product_sku||'',sku:'',bc:r.product_barcode||'',cat:bzCat(r),date:xDate(r.date),q})});
  await bzSettle();soLines=[];soSk=[];
  const res=await loadSales({name:'Billz'},false,rr);const n=await soSave(true);
- return 'Sales: '+n+' movement lines added'+(res.dup?', '+res.dup+' already reconciled':'')+(res.sk.length?', '+res.sk.length+' warnings':'')}
-
+ return 'Sales: '+n+' lines added'+(res.dup?', '+res.dup+' already there':'')+(res.sk.length?', '+res.sk.length+' skipped':'')}
 
 async function bzSync(auto){if(bzBusy)return;bzBusy=true;const b=$('#bzallgo')||$('#bzgo');if(b)b.disabled=true;
  if(!auto)$('#bzlog').innerHTML='';
@@ -1469,8 +1434,8 @@ async function bzCheck(){if(bzBusy)return;bzBusy=true;const out=$('#bzout');out.
  try{bzLog('Reading Billz stock…');const{map,ids}=await bzShops();
   const rows=await bzAll('/v1/stock-report-table',{report_date:today(),shop_ids:ids,currency:'UZS'},j=>j.rows);
   refreshRenderModel();const B={},S={},bt={},st={},nm={};
-  rows.forEach(r=>{const z=map[r.shop_id];if(!z)return;const q=Math.round(+r.measurement_value||0),a=bzAttr(r),pid=r.product_id||r.productId||'',bc=r.product_barcode||'',sku=r.product_sku||'',fallback='sku:'+sku+'|'+normalizeColorLabel(a.color||'')+'|'+String(a.size||'').trim(),ident=pid?'id:'+pid:(bc?'bc:'+bc:fallback),k=z+'|'+ident;bt[z]=(bt[z]||0)+q;B[k]=(B[k]||0)+q;nm[k]=r.product_base_name||r.product_name||k});
-  Object.values(STK).forEach(s=>STORES.forEach(z=>{const q=s.loc[z]||0;if(!q)return;st[z]=(st[z]||0)+q;const fallback='sku:'+(s.art||s.sku)+'|'+normalizeColorLabel(s.color||'')+'|'+String(s.size||'').trim(),ident=s.productId?'id:'+s.productId:(s.bc?'bc:'+s.bc:fallback),k=z+'|'+ident;S[k]=(S[k]||0)+q;nm[k]=nm[k]||s.name||k}));
+  rows.forEach(r=>{const z=map[r.shop_id];if(!z)return;const q=Math.round(+r.measurement_value||0),k=z+'|'+(r.product_barcode||r.product_sku||r.product_id);bt[z]=(bt[z]||0)+q;B[k]=(B[k]||0)+q;nm[k]=r.product_base_name||r.product_name||k});
+  Object.values(STK).forEach(s=>STORES.forEach(z=>{const q=s.loc[z]||0;if(!q)return;st[z]=(st[z]||0)+q;const k=z+'|'+(s.bc||s.art||s.sku);S[k]=(S[k]||0)+q;nm[k]=nm[k]||s.name||k}));
   const tot=STORES.map(z=>`<tr class="r"><td><b>${esc(z)}</b></td><td>${bt[z]||0}</td><td>${st[z]||0}</td><td>${(st[z]||0)-(bt[z]||0)}</td></tr>`).join('');
   const diff=[...new Set([...Object.keys(B),...Object.keys(S)])].filter(k=>(B[k]||0)!==(S[k]||0)).sort((a,b)=>Math.abs((S[b]||0)-(B[b]||0))-Math.abs((S[a]||0)-(B[a]||0)));
   out.innerHTML=`<h3 style="margin-top:14px">Stock: Billz and this site</h3><div class="tw"><table class="sm"><thead><tr><th>Store</th><th>Billz</th><th>This site</th><th>Difference</th></tr></thead><tbody>${tot}</tbody></table></div>`
@@ -1502,11 +1467,11 @@ async function bzFreshPrepare(){
   const agg={};let neg=0,noCode=0;
   rows.forEach(r=>{const z=map[r.shop_id];if(!z)return;const q=Math.round(+r.measurement_value||0);
    if(q<0){neg++;return}if(q===0)return;
-   const sku=r.product_sku||'',bc=r.product_barcode||'',pid=r.product_id||r.productId||'';if(!sku&&!bc&&!pid){noCode++;return}
-   const a=bzAttr(r),it={sku:'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:(a.color?normalizeColorLabel(a.color):(nameColor(r.product_base_name||r.product_name||'')?normalizeColorLabel(r.product_base_name||r.product_name||''):'')),size:a.size,...(pid?{productId:String(pid)}:{})},k=z+'|'+(pid?'id:'+pid:vk(it)+'|'+bc);
+   const sku=r.product_sku||'',bc=r.product_barcode||'';if(!sku&&!bc){noCode++;return}
+   const a=bzAttr(r),it={sku:'',art:sku,bc,name:r.product_base_name||r.product_name||'',brand:r.product_brand_name||'',cat:bzCat(r),color:(a.color?normalizeColorLabel(a.color):(nameColor(r.product_base_name||r.product_name||'')?normalizeColorLabel(r.product_base_name||r.product_name||''):'')),size:a.size},k=z+'|'+vk(it)+'|'+bc;
    if(agg[k])agg[k].qty+=q;else agg[k]={it,z,qty:q}});
   const list=Object.values(agg),per={},by={};
-  list.forEach(o=>{const s=per[o.z]||(per[o.z]={n:0,q:0});s.n++;s.q+=o.qty;const kk=o.z+'|'+vk(o.it);(by[kk]=by[kk]||new Set()).add(o.it.productId?'id:'+o.it.productId:(o.it.bc?'bc:'+o.it.bc:'sku:'+o.it.art))});
+  list.forEach(o=>{const s=per[o.z]||(per[o.z]={n:0,q:0});s.n++;s.q+=o.qty;const kk=o.z+'|'+vk(o.it);(by[kk]=by[kk]||new Set()).add(o.it.bc)});
   const clash=Object.values(by).filter(s=>s.size>1).length,colN=list.filter(o=>o.it.color).length,sizN=list.filter(o=>o.it.size).length,totalPieces=list.reduce((sum,o)=>sum+o.qty,0);
   const lv=live(),cnt={},FA={};lv.forEach(x=>cnt[x.type]=(cnt[x.type]||0)+1);rows.forEach(r=>[...(r.product_attributes||[]),...(r.product_custom_fields||[])].forEach(a=>{if(!a)return;const n=a.attribute_name||a.name||a.custom_field_name||'?',v=String(a.attribute_value||a.value||a.custom_field_value||(a.attribute_name?a.name:'')||'').trim();if(!v)return;const o=FA[n]||(FA[n]={c:0,s:new Set()});o.c++;if(o.s.size<4)o.s.add(v)}));
   const NMT={in:'imports',move:'transfers',out:'sales',rem:'removals'};
@@ -1519,7 +1484,7 @@ async function bzFreshPrepare(){
    +'<p class="mu">Color found on '+colN+' of '+list.length+' items, size on '+sizN+'. Product catalog metadata and settings are kept; the new BILLZ catalog will be loaded before quantities are rebuilt.</p>'
    +(clash?'<p class="bad">'+clash+' article/color/size combinations have different barcodes. This can merge distinct BILLZ variants. Reset is blocked until these identifiers are resolved.</p>':'')
    +(neg?'<p class="bad">'+neg+' BILLZ stock rows have negative quantities. Reset is blocked so those stock discrepancies are not silently discarded.</p>':'')
-   +(noCode?'<p class="bad">'+noCode+' BILLZ stock rows have positive quantity but no product ID, SKU/article or barcode. Reset is blocked so their pieces are not silently omitted.</p>':'')
+   +(noCode?'<p class="bad">'+noCode+' BILLZ stock rows have positive quantity but no SKU/article or barcode. Reset is blocked so their pieces are not silently omitted.</p>':'')
    +(!list.length?'<p class="bad">BILLZ returned no positive stock rows for this date. Nothing to load.</p>':'')
    +'<div class="tw"><table class="sm"><thead><tr><th>Sample item</th><th>Store</th><th>Color</th><th>Size</th><th>Pcs</th></tr></thead><tbody>'+list.slice(0,8).map(o=>'<tr class="r"><td>'+esc(o.it.name||o.it.art||o.it.bc)+'</td><td>'+esc(o.z)+'</td><td>'+esc(o.it.color)+'</td><td>'+esc(o.it.size)+'</td><td>'+o.qty+'</td></tr>').join('')+'</tbody></table></div>'
    +'<p class="mu" style="margin-top:8px">Fields Billz sends with items: '+(Object.entries(FA).map(([n,o])=>esc(n)+' ('+o.c+' items, e.g. '+esc([...o.s].join(', '))+')').join('; ')||'none')+'</p>'+'<details style="margin-top:8px"><summary class="mu">Raw Billz row (for checking color and size)</summary><pre class="mu" style="white-space:pre-wrap;word-break:break-all">'+esc(JSON.stringify(raw,null,1).slice(0,1500))+'</pre></details>'
@@ -1546,7 +1511,7 @@ async function bzFreshRun(){
   for(let i=0;i<lv.length;i+=25){const w=writeBatch(fs);lv.slice(i,i+25).forEach(x=>w.update(doc(fs,'moves',x._id),{del}));await w.commit();started=true;say('Archived '+Math.min(i+25,lv.length)+' of '+lv.length+' active records…')}
   if(lv.length){const archivedIds=new Set(lv.map(x=>x._id));moves=moves.map(x=>archivedIds.has(x._id)?{...x,del}:x);_renderModelSource=null}
   say('Loading BILLZ opening stock for '+P.rep+'…');
-  const gid={},recs=P.list.map(o=>{gid[o.z]=gid[o.z]||newId();return{type:'in',...o.it,to:o.z,from:'',qty:o.qty,date:P.rep,note:'BILLZ opening stock after clean rebuild',tid:gid[o.z],tname:'BILLZ opening stock · '+o.z,photo:null,bz:'open|'+(o.it.productId?'id:'+o.it.productId:(o.it.bc||o.it.art))}});
+  const gid={},recs=P.list.map(o=>{gid[o.z]=gid[o.z]||newId();return{type:'in',...o.it,to:o.z,from:'',qty:o.qty,date:P.rep,note:'BILLZ opening stock after clean rebuild',tid:gid[o.z],tname:'BILLZ opening stock · '+o.z,photo:null,bz:'open|'+(o.it.bc||o.it.art)}});
   await commit(recs,true);started=true;
   bzPlan=null;$('#bzf').value=P.start;if(!$('#bzt').value)$('#bzt').value=today();
   say('Opening stock loaded ('+P.totalPieces+' pcs). Re-syncing BILLZ imports, transfers, write-offs and sales from '+P.start+'…');
@@ -1566,7 +1531,7 @@ const xSave=(wb,n)=>XLSX.writeFile(wb,n);
 const CV=[['Black','qora black чер чёр'],['White','oq beliy bely white бел'],['Red','qizil red крас'],['Blue',"ko'k kok blue siniy siniy син голуб havorang"],['Green','yashil green зел'],['Yellow','sariq yellow жёлт жел'],['Brown','jigarrang jigar brown korichneviy korichniviy korichnev korichn коричн'],['Gray','kulrang kul gray grey seriy sery seryy serii сер серый'],['Pink','pushti pink roziviy rozoviy rozeviy розов'],['Purple','binafsha purple fioletovy фиол'],['Orange','orange apelsin оранж'],['Beige','bej beji beige беж'],['Ivory',"ivory ayvriy ayvori айвори айвори"],['Cream','krem cream molochniy molochnyi malochniy крем молочн'],['Navy','navy'],['Burgundy','bordoviy bordovy bordo бордо'],['Khaki','xaki khaki хаки'],['Gold','tilla gold золот'],['Silver','kumush silver серебр']];
 function nameColor(n){n=String(n||'').toLowerCase().replace(/[’‘`ʻʼ]/g,"'");const pk=s=>{for(const t of s.split(/[^a-zа-яё']+/)){if(!t)continue;for(const[c,ws]of CV)for(const w of ws.split(' '))if(t===w||(/[а-яё]/.test(w)&&t.startsWith(w)))return c}return''};const p=n.match(/\(([^)]*)\)/g);return(p&&pk(p.join(' ')))||pk(n)}
 let _bs=null,_bm={},_bv=[];function bzm(){if(_bs!==moves){_bs=moves;_bm={};_bv=[];moves.filter(x=>x.type==='meta'&&x.m&&!x.stale).forEach(d=>{Object.assign(_bm,d.m);if(Array.isArray(d.variants))_bv.push(...d.variants)})}return _bm}
-const billzMetaFor=x=>{const M=bzm();return (x.productId&&M['id:'+String(x.productId)])||(x.product_id&&M['id:'+String(x.product_id)])||(x.bc&&M[String(x.bc)])||(x.sku&&M['sku:'+String(x.sku)])||(x.art&&M['sku:'+String(x.art)])||null};
+const billzMetaFor=x=>{const M=bzm();return (x.bc&&M[String(x.bc)])||(x.sku&&M['sku:'+String(x.sku)])||(x.art&&M['sku:'+String(x.art)])||(x.product_id&&M['id:'+String(x.product_id)])||null};
 const emptyAttr=v=>{const t=String(v==null?'':v).trim().toLowerCase();return !t||['-','—','none','null','нет','не указано','не указан','не задано','без цвета','not specified','not applicable','not tracked','n/a'].includes(t)};
 function normalizeColorLabel(v){const raw=String(v||'').trim();if(emptyAttr(raw))return '';const t=raw.toLowerCase().replace(/[’‘`ʻʼ]/g,"'").replace(/ё/g,'е');
  if(/айвори|ayvori|ayvriy|\bivory\b/.test(t))return 'Ivory';
@@ -1584,8 +1549,8 @@ function normalizeColorLabel(v){const raw=String(v||'').trim();if(emptyAttr(raw)
 const rawColorOf=x=>{const m=billzMetaFor(x);if(!emptyAttr(x.color))return String(x.color).trim();if(m&&!emptyAttr(m[0]))return String(m[0]).trim();return nameColor(x.name)?String(x.name||'').trim():''};
 const colorOf=x=>normalizeColorLabel(rawColorOf(x));
 let _kindIdxSource=null,_kindIdx={};
-function kindIndex(){if(_kindIdxSource!==STK){_kindIdxSource=STK;_kindIdx={};Object.values(STK||{}).forEach(v=>{if(v.productId)_kindIdx['id:'+v.productId]=v;if(v.bc)_kindIdx['bc:'+v.bc]=v;if(v.sku)_kindIdx['sku:'+v.sku]=v;if(v.art)_kindIdx['art:'+v.art]=v})}return _kindIdx}
-function itemKind(x){const idx=kindIndex(),hit=(x.productId&&idx['id:'+x.productId])||(x.product_id&&idx['id:'+x.product_id])||(x.bc&&idx['bc:'+x.bc])||(x.sku&&idx['sku:'+x.sku])||(x.art&&(idx['art:'+x.art]||idx['sku:'+x.art]))||{};const d=[x.cat,x.category,x.product_categories&&x.product_categories.map(a=>a&&a.name).join(' '),x.categories_path&&x.categories_path.join(' '),x.name,x.product_name,hit.cat,hit.name].filter(Boolean).join(' ').toLowerCase().replace(/[’‘`ʻʼ]/g,"'");
+function kindIndex(){if(_kindIdxSource!==STK){_kindIdxSource=STK;_kindIdx={};Object.values(STK||{}).forEach(v=>{if(v.bc)_kindIdx['bc:'+v.bc]=v;if(v.sku)_kindIdx['sku:'+v.sku]=v;if(v.art)_kindIdx['art:'+v.art]=v})}return _kindIdx}
+function itemKind(x){const idx=kindIndex(),hit=(x.bc&&idx['bc:'+x.bc])||(x.sku&&idx['sku:'+x.sku])||(x.art&&(idx['art:'+x.art]||idx['sku:'+x.art]))||{};const d=[x.cat,x.category,x.product_categories&&x.product_categories.map(a=>a&&a.name).join(' '),x.categories_path&&x.categories_path.join(' '),x.name,x.product_name,hit.cat,hit.name].filter(Boolean).join(' ').toLowerCase().replace(/[’‘`ʻʼ]/g,"'");
  if(/accessor(y|ies)|аксессуар|aksessuar|romol|ro.?mol|towel|полотенц|soat|watch|часы|scar(f|ves)|sharf|шарф|kamar|belt|sumka|су(м|м)ка|bag\b|wallet|hamyon|jewel|bijut|earring|necklace|brеlok|брелок|umbrella|зонт|perfume|парфюм|sunglass|очки/.test(d))return 'accessory';
  if(/shoe|shoes|footwear|обув|туфл|кроссов|кед\b|ботин|сапог|тапоч|sandal|sneaker|tufli|krossov|botinka|etik\b|poyabzal|lofer|slipper|мокасин/.test(d))return 'footwear';
  if(/одежд|рубаш|пальто|плать|брюк|джинс|куртк|пиджак|юбк|кофт|свитер|футболк|худи|shirt|blouse|coat|jacket|dress|trouser|pants|jeans|skirt|sweater|hoodie|t-shirt|cardigan|vest|legging|palto|rubashka|k[o'']?ylak|shim\b|jemp|sviter|kostyum|kardigan|kofta|shorts|clothing|apparel/.test(d))return 'clothing';
@@ -1669,7 +1634,7 @@ let _variantLookupSource=null,_variantByBarcode=new Map(),_variantByProductId=ne
 function rebuildVariantLookup(){
  if(_variantLookupSource===STK)return;
  _variantLookupSource=STK;_variantByBarcode=new Map();_variantByProductId=new Map();_variantBySkuColorSize=new Map();_variantByArticleColorSize=new Map();_variantBySku=new Map();_variantByArticle=new Map();
- const add=(map,key,v)=>{if(!key)return;if(!map.has(key))map.set(key,v);else if(map.get(key)&&map.get(key).k!==v.k)map.set(key,null);};
+ const add=(map,key,v)=>{if(!key)return;if(!map.has(key))map.set(key,v);};
  const addList=(map,key,v)=>{if(!key)return;const a=map.get(key)||[];a.push(v);map.set(key,a);};
  for(const v of Object.values(STK||{})){
   if(v.bc)add(_variantByBarcode,String(v.bc));
@@ -1681,8 +1646,8 @@ function rebuildVariantLookup(){
 }
 function variantForSale(x){
  rebuildVariantLookup();
- const pid=x.product_id||x.productId;if(pid&&_variantByProductId.has(String(pid))){const exact=_variantByProductId.get(String(pid));if(exact)return exact;}
- if(x.bc&&_variantByBarcode.has(String(x.bc))){const exact=_variantByBarcode.get(String(x.bc));if(exact)return exact;}
+ if(x.bc&&_variantByBarcode.has(String(x.bc)))return _variantByBarcode.get(String(x.bc));
+ const pid=x.product_id||x.productId;if(pid&&_variantByProductId.has(String(pid)))return _variantByProductId.get(String(pid));
  const color=String(x.color||''),size=String(x.size||''),sku=String(x.sku||'');
  if(sku){const exact=_variantBySkuColorSize.get([sku,color,size].join('|').toLowerCase());if(exact)return exact;const list=_variantBySku.get(sku)||[];if(list.length===1)return list[0];}
  const art=String(x.art||'');if(art){const exact=_variantByArticleColorSize.get([art,color,size].join('|').toLowerCase());if(exact)return exact;const list=_variantByArticle.get(art)||[];if(list.length===1)return list[0];}
@@ -1758,7 +1723,7 @@ function dailySalesCard(){const host=$('#rep');if(!host)return;const prev=$('#da
  const storeRows=D.byStore.map(o=>`<tr class="r"><td><b>${esc(o.store)}</b></td><td>${nf(o.gross)}</td><td>${nf(o.returns)}</td><td><b>${nf(o.net)}</b></td><td>${nf(o.lines)}</td><td>${nf(o.products)}</td></tr>`).join('');
  const prodRows=D.products.map((o,i)=>`<tr class="r z${i%2}"><td><b>${esc(o.name)}</b><div class="mu">${esc(o.brand)}${o.sku?' · SKU '+esc(o.sku):''}${o.barcode?' · '+esc(o.barcode):''}</div></td><td>${esc(o.color)}</td><td>${esc(o.size)}</td><td>${nf(o.sold)}</td><td>${nf(o.returns)}</td><td><b>${nf(o.net)}</b></td><td>${nf(o.lines)}</td></tr>`).join('');
  const lineRows=D.rows.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))||String(a.color||'').localeCompare(String(b.color||''))).map((x,i)=>`<tr class="r z${i%2}"><td><b>${esc(x.name||x.art||x.bc||x.sku||'Unknown product')}</b><div class="mu">${esc(x.brand||'No brand')}${x.sku?' · SKU '+esc(x.sku):''}</div></td><td>${esc(x.color||'—')}</td><td>${esc(x.size||'—')}</td><td>${esc(x.from||'—')}</td><td>${esc(x.seller||'—')}</td><td style="text-align:right" class="${(+x.qty||0)<0?'bad':''}">${nf(+x.qty||0)}${x.ret?' · return':''}</td><td>${esc(x.bc||'')}</td></tr>`).join('');
- host.insertAdjacentHTML('afterbegin',`<div class="card" id="dailySalesReport" style="margin-bottom:14px"><div class="ph1" style="margin-bottom:12px"><div><h2 style="margin:0">Daily sales report</h2><div class="mu">Historical sales for the selected sale date · not the date you uploaded the file</div></div><div class="acts"><button class="btn" id="dr-prev" title="Previous day">‹ Previous day</button><button class="btn" id="dr-today">Today</button><button class="btn" id="dr-next" title="Next day"${dailyRepDate>=today()?' disabled':''}>Next day ›</button></div></div><div class="dr-filters"><div><label for="dr-date">Sales date</label><input id="dr-date" type="date" value="${esc(dailyRepDate)}" max="${today()}" /></div><div><label for="dr-store">Store</label><select id="dr-store">${locOpts}</select></div><div class="dr-export"><label>Daily report</label><button class="btn pri" id="dr-export" ${typeof XLSX==='undefined'?'disabled':''}>Download Excel</button></div></div><div class="dr-hero"><div class="dr-hero-top"><div><div class="dr-hero-title">Today’s trading pulse</div><div class="mu">${esc(dailyRepDate)} · ${esc(dailyRepStore||'All stores')} · ${nf(D.rows.length)} recorded sale/return lines</div></div><span class="pill" style="background:var(--okbg);color:var(--ok)">● Sales activity</span></div><div class="dr-hero-kpis">${tile('Gross units sold',D.gross)}${tile('Returns',D.returns)}${tile('Net units sold',D.net)}${tile('Distinct products',D.products.length)}${tile('Sale lines',D.positiveLines)}${tile('Return lines',D.returnLines)}</div></div><div class="dr-finance"><div class="dr-fin-card revenue"><div class="k-label">Estimated sales revenue</div><div class="k-value">${uzs(D.finance.revenue)}</div><div class="k-hint">Current BILLZ store prices, or product prices when no store price is supplied</div></div><div class="dr-fin-card cost"><div class="k-label">Estimated cost of goods</div><div class="k-value">${uzs(D.finance.cost)}</div><div class="k-hint">Current BILLZ store supply prices, or product supply prices when no store price is supplied</div></div><div class="dr-fin-card profit"><div class="k-label">Estimated gross profit</div><div class="k-value">${uzs(D.finance.profit)}</div><div class="k-hint">Revenue less estimated item cost</div></div><div class="dr-fin-card margin"><div class="k-label">Estimated gross margin</div><div class="k-value">${D.finance.margin.toFixed(1)}%</div><div class="k-hint">${nf(D.finance.pricedQty)} of ${nf(D.finance.totalQty)} sold/returned units priced</div><div class="dr-fin-coverage"><i style="width:${Math.min(100,D.finance.coverage)}%"></i></div></div></div><div class="dr-fin-note">Financial figures are estimates using the latest BILLZ price saved for each store and variant. Historic transaction prices, discounts and taxes are not currently stored on each sales line. Price coverage: ${D.finance.coverage.toFixed(1)}%. Missing-price quantities are excluded from profit calculations.</div><div class="dr-columns"><div class="dr-panel"><h3>🏆 Top products on ${esc(dailyRepDate)}</h3><div class="dr-click-hint">Top 10 by net units · product photos shown when available</div>${bars||'<div class="empty">No sales found for this date and store.</div>'}</div><div class="dr-panel"><h3>🏬 Store summary</h3><div class="tw"><table class="sm"><thead><tr><th>Store</th><th>Sold</th><th>Returns</th><th>Net</th><th>Lines</th><th>Products</th></tr></thead><tbody>${storeRows||'<tr><td colspan="6" class="mu">No records for this store and day.</td></tr>'}</tbody></table></div></div></div><details open style="margin-top:14px"><summary style="cursor:pointer;font-weight:700;padding:7px 0">Product summary <span class="mu">(${D.products.length} products)</span></summary><div class="tw"><table class="sm"><thead><tr><th>Product</th><th>Color</th><th>Size</th><th>Sold</th><th>Returns</th><th>Net</th><th>Lines</th></tr></thead><tbody>${prodRows||'<tr><td colspan="7" class="mu">No saved sales on this date.</td></tr>'}</tbody></table></div></details><details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700;padding:7px 0"><span>🧾 All sales and returns <span class="mu">(${D.rows.length} lines)</span></span></summary><div class="tw"><table class="sm"><thead><tr><th>Product</th><th>Color</th><th>Size</th><th>Store</th><th>Seller</th><th>Qty</th><th>Barcode</th></tr></thead><tbody>${lineRows||'<tr><td colspan="7" class="mu">No saved sales on this date.</td></tr>'}</tbody></table></div><p class="mu">Showing all ${nf(D.rows.length)} sales and return lines for this selected day.</p></details><p class="mu" style="margin-top:12px">This report shows sales and returns currently saved in Stock Book for the selected date and store. If it shows 0 lines while BILLZ has sales, this means those source transactions have not been synced into Stock Book yet; run BILLZ > Sync all BILLZ data for that date range, then use the comparison tool to check each store. Quantities use the recorded sale date; exact transaction time or revenue is shown only when the source records contain it.</p></div>`);
+ host.insertAdjacentHTML('afterbegin',`<div class="card" id="dailySalesReport" style="margin-bottom:14px"><div class="ph1" style="margin-bottom:12px"><div><h2 style="margin:0">Daily sales report</h2><div class="mu">Historical sales for the selected sale date · not the date you uploaded the file</div></div><div class="acts"><button class="btn" id="dr-prev" title="Previous day">‹ Previous day</button><button class="btn" id="dr-today">Today</button><button class="btn" id="dr-next" title="Next day"${dailyRepDate>=today()?' disabled':''}>Next day ›</button></div></div><div class="dr-filters"><div><label for="dr-date">Sales date</label><input id="dr-date" type="date" value="${esc(dailyRepDate)}" max="${today()}" /></div><div><label for="dr-store">Store</label><select id="dr-store">${locOpts}</select></div><div class="dr-export"><label>Daily report</label><button class="btn pri" id="dr-export" ${typeof XLSX==='undefined'?'disabled':''}>Download Excel</button></div></div><div class="dr-hero"><div class="dr-hero-top"><div><div class="dr-hero-title">Today’s trading pulse</div><div class="mu">${esc(dailyRepDate)} · ${esc(dailyRepStore||'All stores')} · ${nf(D.rows.length)} recorded sale/return lines</div></div><span class="pill" style="background:var(--okbg);color:var(--ok)">● Sales activity</span></div><div class="dr-hero-kpis">${tile('Gross units sold',D.gross)}${tile('Returns',D.returns)}${tile('Net units sold',D.net)}${tile('Distinct products',D.products.length)}${tile('Sale lines',D.positiveLines)}${tile('Return lines',D.returnLines)}</div></div><div class="dr-finance"><div class="dr-fin-card revenue"><div class="k-label">Estimated sales revenue</div><div class="k-value">${uzs(D.finance.revenue)}</div><div class="k-hint">Current BILLZ store prices, or product prices when no store price is supplied</div></div><div class="dr-fin-card cost"><div class="k-label">Estimated cost of goods</div><div class="k-value">${uzs(D.finance.cost)}</div><div class="k-hint">Current BILLZ store supply prices, or product supply prices when no store price is supplied</div></div><div class="dr-fin-card profit"><div class="k-label">Estimated gross profit</div><div class="k-value">${uzs(D.finance.profit)}</div><div class="k-hint">Revenue less estimated item cost</div></div><div class="dr-fin-card margin"><div class="k-label">Estimated gross margin</div><div class="k-value">${D.finance.margin.toFixed(1)}%</div><div class="k-hint">${nf(D.finance.pricedQty)} of ${nf(D.finance.totalQty)} sold/returned units priced</div><div class="dr-fin-coverage"><i style="width:${Math.min(100,D.finance.coverage)}%"></i></div></div></div><div class="dr-fin-note">Financial figures are estimates using the latest BILLZ price saved for each store and variant. Historic transaction prices, discounts and taxes are not currently stored on each sales line. Price coverage: ${D.finance.coverage.toFixed(1)}%. Missing-price quantities are excluded from profit calculations.</div><div class="dr-columns"><div class="dr-panel"><h3>🏆 Top products on ${esc(dailyRepDate)}</h3><div class="dr-click-hint">Top 10 by net units · product photos shown when available</div>${bars||'<div class="empty">No sales found for this date and store.</div>'}</div><div class="dr-panel"><h3>🏬 Store summary</h3><div class="tw"><table class="sm"><thead><tr><th>Store</th><th>Sold</th><th>Returns</th><th>Net</th><th>Lines</th><th>Products</th></tr></thead><tbody>${storeRows||'<tr><td colspan="6" class="mu">No records for this store and day.</td></tr>'}</tbody></table></div></div></div><details open style="margin-top:14px"><summary style="cursor:pointer;font-weight:700;padding:7px 0">Product summary <span class="mu">(${D.products.length} products)</span></summary><div class="tw"><table class="sm"><thead><tr><th>Product</th><th>Color</th><th>Size</th><th>Sold</th><th>Returns</th><th>Net</th><th>Lines</th></tr></thead><tbody>${prodRows||'<tr><td colspan="7" class="mu">No saved sales on this date.</td></tr>'}</tbody></table></div></details><details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700;padding:7px 0"><span>🧾 All sales and returns <span class="mu">(${D.rows.length} lines)</span></span></summary><div class="tw"><table class="sm"><thead><tr><th>Product</th><th>Color</th><th>Size</th><th>Store</th><th>Seller</th><th>Qty</th><th>Barcode</th></tr></thead><tbody>${lineRows||'<tr><td colspan="7" class="mu">No saved sales on this date.</td></tr>'}</tbody></table></div><p class="mu">Showing all ${nf(D.rows.length)} sales and return lines for this selected day.</p></details><p class="mu" style="margin-top:12px">This report includes sales already saved in Stock Book. To see an older day not shown here, sync that date range in Billz first. Quantities use the recorded sale date; exact transaction time or revenue is shown only when the source records contain it.</p></div>`);
  $('#dr-date').onchange=e=>{if(e.target.value){dailyRepDate=e.target.value;dailySalesCard()}};
  $('#dr-store').onchange=e=>{dailyRepStore=e.target.value;dailySalesCard()};
  $('#dr-prev').onclick=()=>{const d=new Date(dailyRepDate+'T12:00:00');d.setDate(d.getDate()-1);dailyRepDate=iso(d);dailySalesCard()};
@@ -1783,7 +1748,7 @@ async function bzProducts(allowBusy=false){if(bzBusy&&!allowBusy)return;const wa
   };
   rawRows.forEach(r=>expand(r));
   const m={},variants=[],seen=new Set(),seenVariant=new Set();let c=0,ph=0,ambiguous=0;
-  const sameVariant=(a,b)=>a&&b&&String(a[0]||'')===String(b[0]||'')&&String(a[2]||'')===String(b[2]||'')&&String(a[8]||'')===String(b[8]||'')&&String(a[9]||'')===String(b[9]||'');
+  const sameVariant=(a,b)=>a&&b&&String(a[0]||'')===String(b[0]||'')&&String(a[2]||'')===String(b[2]||'')&&String(a[9]||'')===String(b[9]||'');
   const put=(key,val)=>{if(!key)return;if(!m[key]){m[key]=val;return}const old=m[key];if(sameVariant(old,val)){if(!old[1]&&val[1])old[1]=val[1];return}m[key]=['','', '',old[3]||val[3]||'',old[4]||val[4]||'',old[5]||val[5]||'',old[6]||val[6]||'',old[7]||val[7]||'',old[8]||val[8]||'',''];ambiguous++};
   for(const r of rows){
    const bc=String(r.barcode||r.product_barcode||r.ean||r.gtin||'').trim(),sku=String(r.sku||r.product_sku||r.article||r.product_article||'').trim(),id=String(r.id||r.product_id||r.variant_id||r.product_variant_id||'').trim();
@@ -1870,10 +1835,10 @@ const _rn=render;render=function(){_rn();if(view==='out')saCard()};
 /* ---------- repair sales: compare saved sales with BILLZ per store + date ---------- */
 let rpPlan=null;
 function rpCompare({rows,map,moves:mv,from,to}){
- const bz={};rows.forEach(r=>{const st=map[r.shop_id]||r.shop_name||'',d=xDate(r.date);if(!st||!d||d<from||d>to)return;const k=d+'|'+st,o=bz[k]||(bz[k]={sold:0,returned:0,net:0});const sold=Math.max(0,Math.round(+r.sold_measurement_value||0)),returned=Math.max(0,Math.round(+r.returned_measurement_value||0));o.sold+=sold;o.returned+=returned;o.net+=sold-returned});
- const sy={};mv.forEach(x=>{if(x.del||x.type!=='out'||x.free||!(x.note==='Billz sync'||String(x.bz||'').startsWith('nightly-sale|')))return;const d=mdate(x);if(!d||d<from||d>to)return;const k=d+'|'+x.from,o=sy[k]||(sy[k]={sold:0,returned:0,net:0,ids:[]}),q=+x.qty||0;if(q>0&&!x.ret)o.sold+=q;else if(q<0||x.ret)o.returned+=Math.abs(q);o.net+=q;o.ids.push(x._id)});
+ const bz={};rows.forEach(r=>{const st=map[r.shop_id]||r.shop_name||'',d=xDate(r.date);if(!st||!d||d<from||d>to)return;const k=d+'|'+st,o=bz[k]||(bz[k]={sold:0,net:0}),s=+r.sold_measurement_value||0,rt=+r.returned_measurement_value||0;o.sold+=s;o.net+=s-rt});
+ const sy={};mv.forEach(x=>{if(x.del||x.type!=='out'||x.free)return;const d=mdate(x);if(!d||d<from||d>to)return;const k=d+'|'+x.from,o=sy[k]||(sy[k]={sold:0,net:0,ids:[]}),q=+x.qty||0;if(q>0)o.sold+=q;o.net+=q;o.ids.push(x._id)});
  const keys=[...new Set([...Object.keys(bz),...Object.keys(sy)])].sort();
- return keys.map(k=>{const a=sy[k]||{sold:0,returned:0,net:0,ids:[]},b=bz[k]||{sold:0,returned:0,net:0},[d,st]=k.split('|');return{d,st,sysSold:a.sold,sysReturned:a.returned,sysNet:a.net,bzSold:b.sold,bzReturned:b.returned,bzNet:b.net,soldDiff:a.sold-b.sold,returnedDiff:a.returned-b.returned,netDiff:a.net-b.net,ids:a.ids}}).filter(o=>o.soldDiff!==0||o.returnedDiff!==0);
+ return keys.map(k=>{const a=sy[k]||{sold:0,net:0,ids:[]},b=bz[k]||{sold:0,net:0},[d,st]=k.split('|');return{d,st,sysSold:a.sold,sysNet:a.net,bzSold:b.sold,bzNet:b.net,diff:a.net-b.net,ids:a.ids}}).filter(o=>o.diff!==0);
 }
 async function rpCheck(){
  if(bzBusy)return;const from=$('#rpf').value,to=$('#rpt').value||today(),m=$('#rpm'),out=$('#rpo'),go=$('#rpg');
@@ -1885,9 +1850,9 @@ async function rpCheck(){
   const list=rpCompare({rows,map,moves,from,to});
   rpPlan={from,to,list};
   if(!list.length){m.textContent='Everything matches BILLZ for '+from+' → '+to+'.';return}
-  const soldDiff=list.reduce((n,o)=>n+o.soldDiff,0),returnDiff=list.reduce((n,o)=>n+o.returnedDiff,0);
-  m.textContent=list.length+' store-days differ. Across those days: sold difference '+nf(soldDiff)+', return difference '+nf(returnDiff)+'. Net-only checks could hide these mismatches.';
-  out.innerHTML='<div class="tw"><table class="sm"><thead><tr><th>Date</th><th>Store</th><th>Stock Book sold</th><th>BILLZ sold</th><th>Sold Δ</th><th>Stock Book returns</th><th>BILLZ returns</th><th>Return Δ</th></tr></thead><tbody>'+list.slice(0,80).map(o=>'<tr class="r"><td>'+esc(o.d.split('-').reverse().join('.'))+'</td><td>'+esc(o.st)+'</td><td>'+nf(o.sysSold)+'</td><td>'+nf(o.bzSold)+'</td><td class="'+(o.soldDiff?'bad':'')+'"><b>'+(o.soldDiff>0?'+':'')+nf(o.soldDiff)+'</b></td><td>'+nf(o.sysReturned)+'</td><td>'+nf(o.bzReturned)+'</td><td class="'+(o.returnedDiff?'bad':'')+'"><b>'+(o.returnedDiff>0?'+':'')+nf(o.returnedDiff)+'</b></td></tr>').join('')+'</tbody></table></div>'+(list.length>80?'<p class="mu">…and '+(list.length-80)+' more.</p>':'');
+  const sysT=list.reduce((n,o)=>n+o.sysNet,0),bzT=list.reduce((n,o)=>n+o.bzNet,0);
+  m.textContent=list.length+' store-days differ. Stock Book has '+nf(sysT)+' net units on them, BILLZ has '+nf(bzT)+'.';
+  out.innerHTML='<div class="tw"><table class="sm"><thead><tr><th>Date</th><th>Store</th><th>Stock Book (net)</th><th>BILLZ (net)</th><th>Difference</th></tr></thead><tbody>'+list.slice(0,80).map(o=>'<tr class="r"><td>'+esc(o.d.split('-').reverse().join('.'))+'</td><td>'+esc(o.st)+'</td><td>'+nf(o.sysNet)+'</td><td>'+nf(o.bzNet)+'</td><td class="'+(o.diff>0?'bad':'')+'"><b>'+(o.diff>0?'+':'')+nf(o.diff)+'</b></td></tr>').join('')+'</tbody></table></div>'+(list.length>80?'<p class="mu">…and '+(list.length-80)+' more.</p>':'');
   go.hidden=false;go.disabled=false;
  }catch(e){m.textContent='Check failed: '+(e&&e.message||e)}
  finally{bzBusy=false;$('#rpc').disabled=false}
@@ -1895,7 +1860,7 @@ async function rpCheck(){
 async function rpFix(){
  if(bzBusy||!rpPlan||!rpPlan.list.length)return;
  const P=rpPlan,m=$('#rpm'),say=t=>{m.textContent=t},ids=P.list.flatMap(o=>o.ids),idset=new Set(ids);
- if(!confirm('Archive '+ids.length+' BILLZ-synced sales lines on '+P.list.length+' store-days and load those days again from BILLZ? Manual sales are not changed.\n\nA backup file of these lines downloads first. Archived lines stay in the Deleted tab.'))return;
+ if(!confirm('Archive '+ids.length+' saved sales lines on '+P.list.length+' store-days and load those days again from BILLZ?\n\nA backup file of these lines downloads first. Archived lines stay in the Deleted tab.'))return;
  bzBusy=true;$('#rpc').disabled=true;$('#rpg').disabled=true;let started=false;
  try{
   const bk=new Blob([JSON.stringify({format:'Stock Book sales repair backup',exportedAt:new Date().toISOString(),records:moves.filter(x=>idset.has(x._id))})],{type:'application/json'}),a=document.createElement('a');
@@ -2037,7 +2002,7 @@ async function doRm(){const d=rmD,ks=Object.keys(d.q),b=$('#rm-ok'),m=$('#rm-m2'
  const tid=newId(),recs=ks.map(k=>({type:'rem',...pick(STK[k]),from:d.store,to:'',qty:d.q[k],date:today(),note:d.note,r:d.r,tid,tname:d.name,photo:null,...(d.file&&d.fname?{bzf:d.fname}:{})}));
  b.disabled=true;try{await put(recs);rmD=null;go('rm')}catch(e){m.textContent='Save failed. Check your internet and try again.';b.disabled=false}}
 
-/* ---------- Telegram Dashboard connection setup ---------- */
+/* ---------- Telegram daily report setup ---------- */
 async function telegramApi(body){
  const u=auth&&auth.currentUser;if(!u)throw new Error('Please sign in first.');
  const idToken=await u.getIdToken();
@@ -2047,25 +2012,25 @@ async function telegramApi(body){
 function telegramReportCard(){
  const host=$('#rep');if(!host||!auth||!auth.currentUser)return;
  const cfg=moves.find(x=>x._id==='telegram_config')||{};
- host.insertAdjacentHTML('beforeend',`<div class="card" id="accessManagementCard" style="margin-top:14px"><div class="ln"><div><h3 style="margin:0">Connect access group</h3><p class="mu" style="margin:5px 0 0">Connect one private Telegram group. Its members can open the Stock Book Mini App. All reports and product photos stay inside the Mini App; nothing is sent to chats. This controls Mini App access only; Stock Book account roles are separate.</p></div><span class="pill">${cfg.chatId?'Group connected':'Setup required'}</span></div><div class="mu" style="margin-top:10px">1. Add the managers and other authorized people to your private Telegram group. 2. Add <a href="https://t.me/wardareport2026_bot" target="_blank" rel="noopener">@wardareport2026_bot</a> to that group as an administrator. 3. Telegram registers the group when the bot is added. 4. Find and save the group below. To give or remove access later, add or remove that person from the Telegram group.</div><div class="row3" style="margin-top:12px"><div><label for="tg-chat-list">Connected Telegram group</label><select id="tg-chat-list"><option value="">Find groups…</option></select></div><div><label for="tg-chat-id">Group chat ID</label><input id="tg-chat-id" inputmode="numeric" autocomplete="off" placeholder="Choose your private group" value="${esc(cfg.chatId||'')}"></div><div style="display:flex;align-items:end"><button class="btn" id="tg-find-chats" style="width:100%">Find group</button></div></div><div class="xl" style="margin-top:10px;align-items:center"><button class="btn pri" id="tg-save-group">Save group & give access</button><button class="btn" id="tg-send-now">Open Telegram bot</button><button class="btn" id="tg-enable-bot">Enable Dashboard button</button></div><p class="mu" style="margin-top:10px">The bot must remain an administrator of the connected group so it can verify membership. Server-side variables: <b>TELEGRAM_BOT_TOKEN</b>, <b>SUPABASE_URL</b> and <b>SUPABASE_SERVICE_ROLE_KEY</b>. Never paste secrets into this page or chat.</p><div id="tg-status" class="mu" role="status" aria-live="polite" style="margin-top:8px;min-height:20px"></div></div>`);
- const status=$('#tg-status'),chatInput=$('#tg-chat-id'),select=$('#tg-chat-list'),setBusy=(busy)=>{$$('#tg-find-chats,#tg-save-group,#tg-send-now,#tg-enable-bot').forEach(b=>{if(b)b.disabled=busy})};
+ host.insertAdjacentHTML('beforeend',`<div class="card" id="telegramDailyCard" style="margin-top:14px"><div class="ln"><div><h3 style="margin:0">Telegram daily report</h3><p class="mu" style="margin:5px 0 0">One private group for you, both bosses and the manager. Daily report at 22:30 Tashkent time, after the final BILLZ transaction sync.</p></div><span class="pill">${cfg.chatId?(cfg.enabled===false?'Paused':'Group saved'):'Setup required'}</span></div><div class="mu" style="margin-top:10px">1. Create one private Telegram group and add all four people. 2. Add <a href="https://t.me/wardareport2026_bot" target="_blank" rel="noopener">@wardareport2026_bot</a> to the group. 3. In the group, send <b>/start@wardareport2026_bot</b>. 4. Find the group below and save it.</div><div class="row3" style="margin-top:12px"><div><label for="tg-chat-list">Your recent Telegram groups</label><select id="tg-chat-list"><option value="">Find groups…</option></select></div><div><label for="tg-chat-id">Group chat ID</label><input id="tg-chat-id" inputmode="numeric" autocomplete="off" placeholder="Choose your private group" value="${esc(cfg.chatId||'')}"></div><div style="display:flex;align-items:end"><button class="btn" id="tg-find-chats" style="width:100%">Find groups</button></div></div><div class="xl" style="margin-top:10px;align-items:center"><label style="display:flex;align-items:center;gap:8px;margin:0"><input id="tg-enabled" type="checkbox" style="width:auto"${cfg.enabled===false?'':' checked'}> Enable automatic daily report</label><button class="btn pri" id="tg-save-test">Save group &amp; send test</button><button class="btn" id="tg-send-now">Send selected day now</button><button class="btn" id="tg-enable-bot">Enable bot menu (/start)</button></div><p class="mu" style="margin-top:10px">Server-side Netlify variables: <b>TELEGRAM_BOT_TOKEN</b>, <b>SUPABASE_URL</b> and <b>SUPABASE_SERVICE_ROLE_KEY</b>. Never paste secrets into this page or chat. After clicking <b>Enable bot menu</b>, anyone in the saved group can send <b>/start</b> to open buttons: Overall report and each store, with Today / Yesterday and product photos.</p><div id="tg-status" class="mu" role="status" aria-live="polite" style="margin-top:8px;min-height:20px"></div></div>`);
+ const status=$('#tg-status'),chatInput=$('#tg-chat-id'),select=$('#tg-chat-list'),setBusy=(busy)=>{$$('#tg-find-chats,#tg-save-test,#tg-send-now,#tg-enable-bot').forEach(b=>{if(b)b.disabled=busy})};
  select.onchange=()=>{if(select.value)chatInput.value=select.value};
- $('#tg-find-chats').onclick=async()=>{setBusy(true);status.textContent='Looking for private groups where the bot is a member or administrator…';try{const j=await telegramApi({action:'findChats'});const groups=j.chats.filter(c=>c.type==='group'||c.type==='supergroup');select.innerHTML='<option value="">Choose a private group…</option>'+groups.map(c=>`<option value="${esc(c.id)}">${esc(c.label)} · ${esc(c.id)}</option>`).join('');if(!groups.length)status.textContent='No groups found. Add @wardareport2026_bot to the private group as an administrator. If it still does not appear, remove and re-add the bot to refresh the group update, then click Find group again.';else status.textContent='Found '+groups.length+' group(s). Select the private group containing the people who need Dashboard access.';}catch(e){status.textContent=e.message||'Could not read Telegram chats.'}finally{setBusy(false)}};
- telegramApi({action:'getSettings'}).then(j=>{if(j.settings){chatInput.value=j.settings.chatId||'';if(j.settings.chatId){select.innerHTML=`<option value="${esc(j.settings.chatId)}" selected>Connected: ${esc(j.settings.chatTitle||'private group')} · ${esc(j.settings.chatId)}</option>`;status.textContent='✅ Group connected. Its members can open the Dashboard. Add or remove people in the Telegram group to manage access.';}const pill=$('#accessManagementCard .pill');if(pill)pill.textContent=j.settings.chatId?'Group connected':'Setup required';}}).catch(e=>{status.textContent='Could not load group settings: '+e.message});
- $('#tg-save-group').onclick=async()=>{const chatId=chatInput.value.trim();if(!chatId){status.textContent='Find and choose your private Telegram group first.';return}setBusy(true);status.textContent='Verifying the bot is an administrator and saving group access…';try{const j=await telegramApi({action:'saveGroup',chatId});const pill=$('#accessManagementCard .pill');if(pill)pill.textContent='Group connected';status.textContent='✅ Group connected. Members of this group can open the Dashboard. No messages or photos were sent.';}catch(e){status.textContent='Could not connect group: '+(e.message||e)}finally{setBusy(false)}};
- $('#tg-enable-bot').onclick=async()=>{setBusy(true);status.textContent='Connecting the /start menu to the bot…';try{await telegramApi({action:'enableBot'});status.textContent='✅ Dashboard menu is enabled. Open the private bot chat and tap the Dashboard menu button. /start does not send a chat message.'}catch(e){status.textContent='Could not enable the bot menu: '+(e.message||e)}finally{setBusy(false)}};
- $('#tg-send-now').onclick=()=>{window.open('https://t.me/wardareport2026_bot','_blank','noopener')};
+ $('#tg-find-chats').onclick=async()=>{setBusy(true);status.textContent='Looking for private groups that have messaged your bot…';try{const j=await telegramApi({action:'findChats'});const groups=j.chats.filter(c=>c.type==='group'||c.type==='supergroup');select.innerHTML='<option value="">Choose a private group…</option>'+groups.map(c=>`<option value="${esc(c.id)}">${esc(c.label)} · ${esc(c.id)}</option>`).join('');if(!groups.length)status.textContent='No groups found. Add @wardareport2026_bot to your private group and send /start@wardareport2026_bot inside that group, then click Find groups again.';else status.textContent='Found '+groups.length+' group(s). Select the private group containing all four recipients.';}catch(e){status.textContent=e.message||'Could not read Telegram chats.'}finally{setBusy(false)}};
+ telegramApi({action:'getSettings'}).then(j=>{if(j.settings){chatInput.value=j.settings.chatId||'';if(j.settings.chatId){select.innerHTML=`<option value="${esc(j.settings.chatId)}" selected>Saved: ${esc(j.settings.chatTitle||'private group')} · ${esc(j.settings.chatId)}</option>`;status.textContent='✅ This group is saved and is used for every daily report and the /start menu. You only need to change it to use another group.';}$('#tg-enabled').checked=j.settings.enabled!==false;const pill=$('#telegramDailyCard .pill');if(pill)pill.textContent=j.settings.chatId?(j.settings.enabled===false?'Paused':'Chat saved'):'Setup required';}}).catch(e=>{status.textContent='Could not load Telegram settings: '+e.message});
+ $('#tg-save-test').onclick=async()=>{const chatId=chatInput.value.trim();if(!chatId){status.textContent='Choose your private Telegram group first.';return}const enabled=$('#tg-enabled').checked;setBusy(true);status.textContent='Verifying this is a group, sending a test message and saving the group to Supabase…';try{const j=await telegramApi({action:'sendTest',chatId,enabled});const pill=$('#telegramDailyCard .pill');if(pill)pill.textContent=enabled?'Chat saved':'Paused';status.textContent=j.storage==='supabase'?(enabled?'✅ Test message delivered to '+(j.chatTitle||'the group')+'. Group settings are saved in Supabase; daily reports are enabled for 22:30 Tashkent time.':'✅ Test message delivered. Group settings are saved in Supabase; automatic reports are paused.'):'✅ Test message delivered, but Supabase is not configured, so the group was not saved.';}catch(e){status.textContent='Telegram connection failed: '+(e.message||e)+'. Check the bot token, Supabase setup and that you pressed Start in Telegram.'}finally{setBusy(false)}};
+ $('#tg-enable-bot').onclick=async()=>{setBusy(true);status.textContent='Connecting the /start menu to the bot…';try{await telegramApi({action:'enableBot'});status.textContent='✅ Bot menu is on. Open the Telegram group and send /start.'}catch(e){status.textContent='Could not enable the bot menu: '+(e.message||e)}finally{setBusy(false)}};
+ $('#tg-send-now').onclick=async()=>{setBusy(true);status.textContent='Preparing the selected day’s report…';try{const date=$('#dr-date')&&$('#dr-date').value||today(),j=await telegramApi({action:'sendReportNow',date});const r=j.result||{};status.textContent=`Report sent for ${r.date||date}: ${nf(r.net||0)} net sales pcs, ${nf(r.imports||0)} imported pcs, ${nf(r.writeoffs||0)} written-off pcs. Sales photos ${r.salesPhotos||0}; import photos ${r.importPhotos||0}.`;}catch(e){status.textContent='Could not send report: '+(e.message||e)}finally{setBusy(false)}};
 }
-const _renderRepBeforeAccess=renderRep;
+const _renderRepBeforeTelegram=renderRep;
 renderRep=function(){
- _renderRepBeforeAccess();
+ _renderRepBeforeTelegram();
  telegramReportCard();
  const host=$('#rep');if(!host)return;
- const daily=$('#dailySalesReport'),tg=$('#accessManagementCard');
+ const daily=$('#dailySalesReport'),tg=$('#telegramDailyCard');
  const rest=[...host.children].filter(x=>x!==daily&&x!==tg);
  host.innerHTML='';
- host.insertAdjacentHTML('beforeend',`<div class="ph1"><div><h1>Reports</h1><div class="mu">Daily sales first. Extra analytics and settings are kept below. <span class="pill" style="margin-left:6px">Build 1.4.0 · 10 Nov 2026 · Deployment verified</span></div></div></div><div id="reportDailyMount"></div><details id="reportMore" class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;font-size:16px;padding:4px 0">More reports & analytics <span class="mu">· weekly, monthly, colors, sizes, imports and Excel</span></summary><div id="reportMoreMount" style="margin-top:12px"></div></details><details id="reportAccess" class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;font-size:16px;padding:4px 0">Access Management <span class="mu">· connected group & group-member access</span></summary><div id="reportAccessMount" style="margin-top:12px"></div></details>`);
- const dm=$('#reportDailyMount'),mm=$('#reportMoreMount'),tm=$('#reportAccessMount');
+ host.insertAdjacentHTML('beforeend',`<div class="ph1"><div><h1>Reports</h1><div class="mu">Daily sales first. Extra analytics and settings are kept below.</div></div></div><div id="reportDailyMount"></div><details id="reportMore" class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;font-size:16px;padding:4px 0">More reports & analytics <span class="mu">· weekly, monthly, colors, sizes, imports and Excel</span></summary><div id="reportMoreMount" style="margin-top:12px"></div></details><details id="reportTelegram" class="card" style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;font-size:16px;padding:4px 0">Telegram delivery <span class="mu">· @wardareport2026_bot · 22:30 Tashkent time</span></summary><div id="reportTelegramMount" style="margin-top:12px"></div></details>`);
+ const dm=$('#reportDailyMount'),mm=$('#reportMoreMount'),tm=$('#reportTelegramMount');
  if(daily)dm.appendChild(daily);
  rest.forEach(x=>mm.appendChild(x));
  if(tg)tm.appendChild(tg);
@@ -2109,8 +2074,7 @@ document.addEventListener('click',e=>{const t=e.target;
  if(!t.closest('#fly,.nb[data-n="user"]'))$('#fly').hidden=true;
  if(t.matches('img.pic')){t.classList.toggle('big');return}
  const th=t.closest('[data-th],[data-dn],[data-sh],[data-fx],[data-lang]');if(th){if(th.dataset.th)setTheme(th.dataset.th,true);if(th.dataset.dn)setLook('dens',th.dataset.dn);if(th.dataset.sh)setLook('shape',th.dataset.sh);if(th.dataset.fx)setLook('fx',th.dataset.fx);if(th.dataset.lang)setLanguage(th.dataset.lang);$('#fly').innerHTML=flyHtml();return}
- if(t.closest('#lo-all')){const b=t.closest('#lo-all');if(b)b.disabled=true;(async()=>{try{const user=auth.currentUser;if(!user)throw new Error('No active account.');const token=await user.getIdToken(),r=await fetch('/.netlify/functions/revoke-sessions',{method:'POST',headers:{Authorization:'Bearer '+token}}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Server could not revoke sessions.');await signOut(auth)}catch(err){console.error('Stock Book all-device sign-out failed:',err);const loginErr=$('#le');if(loginErr)loginErr.textContent='Could not log out other devices: '+(err&&err.message||'check Render setup');if(b)b.disabled=false}})();return}
- if(t.closest('#lo')){const b=t.closest('#lo');if(b)b.disabled=true;signOut(auth).catch(err=>{console.error('Stock Book sign-out failed:',err);const loginErr=$('#le');if(loginErr)loginErr.textContent='Could not log out: '+(err&&err.message||'check your connection');if(b)b.disabled=false});return}
+ if(t.closest('#lo')){signOut(auth);return}
  if(t.id==='dlg'||t.closest('[data-dcancel]')){dg=null;renderDlg();return}
  if(t.closest('#dgo')){doDel();return}
  if(t.closest('#rcsv')){repCsv();return}
@@ -2159,27 +2123,27 @@ document.addEventListener('click',e=>{const t=e.target;
 const UI_LANG = {
  uz: {
   "Home":"Bosh sahifa","Catalog":"Katalog","Transfer":"Ko‘chirish","Import":"Kirim","Sales":"Savdo","Remove":"Hisobdan chiqarish","Report":"Hisobot","Style":"Ko‘rinish",
-  "Dashboard":"Boshqaruv paneli","Reports":"Hisobotlar","Daily sales report":"Kunlik savdo hisoboti","Daily sales":"Kunlik savdo","More reports & analytics":"Boshqa hisobotlar va tahlillar","Access Management":"Kirish huquqlarini boshqarish",
+  "Dashboard":"Boshqaruv paneli","Reports":"Hisobotlar","Daily sales report":"Kunlik savdo hisoboti","Daily sales":"Kunlik savdo","More reports & analytics":"Boshqa hisobotlar va tahlillar","Telegram delivery":"Telegram orqali yuborish",
   "Theme":"Mavzu","Spacing":"Oraliq","Corners":"Burchaklar","Comfortable":"Qulay","Compact":"Ixcham","Round":"Dumaloq","Square":"Kvadrat","Language / Til / Язык":"Til / Язык / Language","O‘zbekcha":"O‘zbekcha","English":"Inglizcha","Русский":"Ruscha","Log out":"Chiqish",
   "New transfer":"Yangi ko‘chirish","New import":"Yangi kirim","New sale":"Yangi savdo","New removal":"Yangi hisobdan chiqarish","Download CSV":"CSV yuklab olish","Download Excel":"Excel yuklab olish","Download product Excel":"Mahsulot Excel faylini yuklab olish",
-  "All stores":"Barcha do‘konlar","Search":"Qidirish","Search products":"Mahsulotlarni qidirish","Filter":"Filtr","Filter by key name":"Kalit nomi bo‘yicha filtrlash","Choose a chat...":"Chatni tanlang...","Find Telegram chats":"Telegram chatlarini topish","Save group":"Guruhni saqlash","Save group & give access":"Guruhni saqlash va ruxsat berish","Find group":"Guruhni topish","Enable Dashboard button":"Dashboard tugmasini yoqish","Connected Telegram group":"Ulangan Telegram guruhi","Open Dashboard":"Dashboardni ochish",
+  "All stores":"Barcha do‘konlar","Search":"Qidirish","Search products":"Mahsulotlarni qidirish","Filter":"Filtr","Filter by key name":"Kalit nomi bo‘yicha filtrlash","Choose a chat...":"Chatni tanlang...","Find Telegram chats":"Telegram chatlarini topish","Save chat & send test":"Chatni saqlash va sinov yuborish","Send selected day now":"Tanlangan kun hisobotini yuborish",
   "Date":"Sana","From date":"Boshlanish sanasi","To date":"Tugash sanasi","Store":"Do‘kon","Product":"Mahsulot","Products":"Mahsulotlar","Brand":"Brend","Color":"Rang","Size":"O‘lcham","Quantity":"Miqdor","Price":"Narx","Purchase price":"Xarid narxi","Selling price":"Sotuv narxi","Stock":"Qoldiq","In stock":"Omborda","Imported":"Kirim qilingan","Transferred":"Ko‘chirilgan","Sold":"Sotilgan","Removed":"Hisobdan chiqarilgan","Returns":"Qaytarilgan","Net sales":"Sof savdo","Revenue":"Tushum","Profit":"Foyda","Margin":"Marja",
   "Today":"Bugun","Yesterday":"Kecha","Previous day":"Oldingi kun","Next day":"Keyingi kun","Choose date":"Sanani tanlang","Top products":"Eng ko‘p sotilgan mahsulotlar","Top brands":"Eng yaxshi brendlar","Top colors":"Eng ko‘p sotilgan ranglar","Top 10 products":"Top 10 mahsulot","Daily summary":"Kunlik xulosa","Sales summary":"Savdo xulosasi","Imports":"Kirimlar","Write-offs":"Hisobdan chiqarishlar","Write-off causes":"Hisobdan chiqarish sabablari",
   "No items yet. Search above or upload an Excel file.":"Hozircha ma’lumot yo‘q. Qidiring yoki Excel fayl yuklang.","No sales.":"Savdo yo‘q.","No data for this date.":"Bu sana uchun ma’lumot yo‘q.","Last sync:":"Oxirgi sinxronlash:","Sync all BILLZ data":"BILLZ ma’lumotlarini to‘liq sinxronlash","Sync product catalog only":"Faqat mahsulot katalogini sinxronlash","Compare stock with BILLZ":"Qoldiqni BILLZ bilan solishtirish",
   "Color not supplied":"Rang ko‘rsatilmagan","Color needs checking":"Rangni tekshirish kerak","Missing color":"Rang kiritilmagan","Not tracked":"Hisobga olinmaydi","Not specified":"Ko‘rsatilmagan","Accessory":"Aksessuar","Accessories":"Aksessuarlar","Clothing":"Kiyim","Footwear":"Oyoq kiyim","Available":"Mavjud","Unavailable":"Mavjud emas","Save":"Saqlash","Cancel":"Bekor qilish","Edit":"Tahrirlash","Delete":"O‘chirish","Add":"Qo‘shish","Close":"Yopish","Back":"Orqaga","Details":"Tafsilotlar","History":"Tarix","Activity":"Amaliyot","Note":"Izoh","Reason":"Sabab","Seller":"Sotuvchi","Barcode":"Shtrix-kod","SKU":"SKU","Category":"Kategoriya",
-  "Access Management":"Kirish huquqlarini boshqarish",
+  "Enable automatic daily report":"Kunlik avtomatik hisobotni yoqish","Automatic delivery every day at 22:30 Uzbekistan time.":"Har kuni Toshkent vaqti bilan 22:30 da avtomatik yuboriladi.","Daily report to @wardareport2026_bot at 22:30 Tashkent time, after the final BILLZ transaction sync.":"BILLZ bilan yakuniy sinxronlashdan so‘ng, har kuni Toshkent vaqti bilan 22:30 da @wardareport2026_bot ga hisobot yuboriladi."
  },
  ru: {
   "Home":"Главная","Catalog":"Каталог","Transfer":"Перемещение","Import":"Приход","Sales":"Продажи","Remove":"Списание","Report":"Отчёты","Style":"Оформление",
-  "Dashboard":"Панель управления","Reports":"Отчёты","Daily sales report":"Ежедневный отчёт о продажах","Daily sales":"Продажи за день","More reports & analytics":"Другие отчёты и аналитика","Access Management":"Управление доступом",
+  "Dashboard":"Панель управления","Reports":"Отчёты","Daily sales report":"Ежедневный отчёт о продажах","Daily sales":"Продажи за день","More reports & analytics":"Другие отчёты и аналитика","Telegram delivery":"Отправка в Telegram",
   "Theme":"Тема","Spacing":"Интервалы","Corners":"Углы","Comfortable":"Удобный","Compact":"Компактный","Round":"Закруглённый","Square":"Квадратный","Language / Til / Язык":"Язык / Til / Language","O‘zbekcha":"Узбекский","English":"Английский","Русский":"Русский","Log out":"Выйти",
   "New transfer":"Новое перемещение","New import":"Новый приход","New sale":"Новая продажа","New removal":"Новое списание","Download CSV":"Скачать CSV","Download Excel":"Скачать Excel","Download product Excel":"Скачать Excel по товару",
-  "All stores":"Все магазины","Search":"Поиск","Search products":"Поиск товаров","Filter":"Фильтр","Filter by key name":"Фильтр по имени ключа","Choose a chat...":"Выберите чат...","Find Telegram chats":"Найти чаты Telegram","Save group":"Сохранить группу","Save group & give access":"Сохранить группу и предоставить доступ","Find group":"Найти группу","Enable Dashboard button":"Включить кнопку Dashboard","Connected Telegram group":"Подключённая группа Telegram","Open Dashboard":"Открыть Dashboard",
+  "All stores":"Все магазины","Search":"Поиск","Search products":"Поиск товаров","Filter":"Фильтр","Filter by key name":"Фильтр по имени ключа","Choose a chat...":"Выберите чат...","Find Telegram chats":"Найти чаты Telegram","Save chat & send test":"Сохранить чат и отправить тест","Send selected day now":"Отправить отчёт за выбранный день",
   "Date":"Дата","From date":"Дата начала","To date":"Дата окончания","Store":"Магазин","Product":"Товар","Products":"Товары","Brand":"Бренд","Color":"Цвет","Size":"Размер","Quantity":"Количество","Price":"Цена","Purchase price":"Закупочная цена","Selling price":"Цена продажи","Stock":"Остаток","In stock":"В наличии","Imported":"Принято","Transferred":"Перемещено","Sold":"Продано","Removed":"Списано","Returns":"Возвраты","Net sales":"Чистые продажи","Revenue":"Выручка","Profit":"Прибыль","Margin":"Маржа",
   "Today":"Сегодня","Yesterday":"Вчера","Previous day":"Предыдущий день","Next day":"Следующий день","Choose date":"Выбрать дату","Top products":"Лидеры продаж","Top brands":"Лучшие бренды","Top colors":"Популярные цвета","Top 10 products":"Топ-10 товаров","Daily summary":"Итоги дня","Sales summary":"Итоги продаж","Imports":"Поступления","Write-offs":"Списания","Write-off causes":"Причины списаний",
   "No items yet. Search above or upload an Excel file.":"Пока нет товаров. Найдите товар или загрузите Excel-файл.","No sales.":"Продаж нет.","No data for this date.":"Нет данных за эту дату.","Last sync:":"Последняя синхронизация:","Sync all BILLZ data":"Синхронизировать все данные BILLZ","Sync product catalog only":"Синхронизировать только каталог","Compare stock with BILLZ":"Сравнить остатки с BILLZ",
   "Color not supplied":"Цвет не указан","Color needs checking":"Нужно проверить цвет","Missing color":"Цвет отсутствует","Not tracked":"Не отслеживается","Not specified":"Не указано","Accessory":"Аксессуар","Accessories":"Аксессуары","Clothing":"Одежда","Footwear":"Обувь","Available":"Доступно","Unavailable":"Недоступно","Save":"Сохранить","Cancel":"Отмена","Edit":"Изменить","Delete":"Удалить","Add":"Добавить","Close":"Закрыть","Back":"Назад","Details":"Подробности","History":"История","Activity":"Операция","Note":"Примечание","Reason":"Причина","Seller":"Продавец","Barcode":"Штрихкод","SKU":"Артикул","Category":"Категория",
-  "Access Management":"Управление доступом",
+  "Enable automatic daily report":"Включить ежедневный автоматический отчёт","Automatic delivery every day at 22:30 Uzbekistan time.":"Автоматическая отправка каждый день в 22:30 по времени Ташкента.","Daily report to @wardareport2026_bot at 22:30 Tashkent time, after the final BILLZ transaction sync.":"Ежедневный отчёт для @wardareport2026_bot в 22:30 по Ташкенту после последней синхронизации BILLZ."
  }
 };
 let currentLanguage='en';
@@ -2206,7 +2170,7 @@ Object.assign(UI_LANG.uz,{
  "Imported (pcs)":"Kirim qilingan (dona)","Sold (pcs)":"Sotilgan (dona)","Removed (pcs)":"Hisobdan chiqarilgan (dona)","Moved between stores (pcs)":"Do‘konlar o‘rtasida ko‘chirilgan (dona)",
  "No data":"Ma’lumot yo‘q","No results":"Natija yo‘q","No records":"Yozuvlar yo‘q","No records for this store and day.":"Bu do‘kon va kun uchun yozuvlar yo‘q.",
  "Recent chats from your bot":"Botdagi so‘nggi chatlar","Telegram chat ID":"Telegram chat ID","Setup required":"Sozlash kerak","Find Telegram chats":"Telegram chatlarini topish",
- 
+ "Automatic delivery every day at 22:30 Uzbekistan time.":"Har kuni Toshkent vaqti bilan 22:30 da avtomatik yuboriladi.",
  "Choose a chat...":"Chatni tanlang...","Select":"Tanlash","Select all":"Barchasini tanlash","Clear":"Tozalash","Reset":"Qayta tiklash",
  "Color and size variations":"Rang va o‘lcham variantlari","Available colors":"Mavjud ranglar","Available sizes":"Mavjud o‘lchamlar",
  "Gross units sold":"Jami sotilgan dona","Net units sold":"Sof sotilgan dona","Sales / return lines":"Savdo / qaytarish qatorlari","Distinct products":"Turli mahsulotlar",
@@ -2233,7 +2197,7 @@ Object.assign(UI_LANG.ru,{
  "Imported (pcs)":"Поступило (шт.)","Sold (pcs)":"Продано (шт.)","Removed (pcs)":"Списано (шт.)","Moved between stores (pcs)":"Перемещено между магазинами (шт.)",
  "No data":"Нет данных","No results":"Нет результатов","No records":"Нет записей","No records for this store and day.":"За этот день по магазину записей нет.",
  "Recent chats from your bot":"Последние чаты вашего бота","Telegram chat ID":"ID чата Telegram","Setup required":"Требуется настройка","Find Telegram chats":"Найти чаты Telegram",
- 
+ "Automatic delivery every day at 22:30 Uzbekistan time.":"Автоматическая отправка каждый день в 22:30 по Ташкенту.",
  "Choose a chat...":"Выберите чат...","Select":"Выбрать","Select all":"Выбрать всё","Clear":"Очистить","Reset":"Сбросить",
  "Color and size variations":"Варианты цветов и размеров","Available colors":"Доступные цвета","Available sizes":"Доступные размеры",
  "Gross units sold":"Всего продано, шт.","Net units sold":"Чистые продажи, шт.","Sales / return lines":"Строки продаж / возвратов","Distinct products":"Уникальных товаров",
@@ -2263,7 +2227,7 @@ uz: {
  "Deliver to store":"Do‘konga yetkazish","Import list":"Kirimlar ro‘yxati","Save import":"Kirimni saqlash","Add an item by hand":"Mahsulotni qo‘lda qo‘shish","Add to list":"Ro‘yxatga qo‘shish","Clear form":"Formani tozalash",
  "Today":"Bugun","Yesterday":"Kecha","Previous day":"Oldingi kun","Next day":"Keyingi kun","Daily sales report":"Kunlik savdo hisoboti","Historical sales for the selected sale date · not the date you uploaded the file":"Tanlangan savdo sanasidagi tarixiy savdolar · fayl yuklangan sana emas",
  "Gross units sold":"Jami sotilgan dona","Sales / return lines":"Savdo / qaytarish qatorlari","sale lines":"savdo qatori","return lines":"qaytarish qatori","Distinct products":"Turli mahsulotlar soni","Top products on":"Eng ko‘p sotilgan mahsulotlar:","Store summary":"Do‘konlar xulosasi","Product summary":"Mahsulotlar xulosasi","Sales line details":"Savdo qatorlari tafsilotlari","Showing first 300 products. Excel includes every row.":"Birinchi 300 ta mahsulot ko‘rsatilmoqda. Excel faylida barcha qatorlar mavjud.","Showing 500 lines. Excel includes all":"500 ta qator ko‘rsatilmoqda. Excel faylida barchasi mavjud.",
- "No sales found for this date and store.":"Bu sana va do‘kon uchun savdo topilmadi.","No records for this store and day.":"Bu do‘kon va kun uchun yozuvlar yo‘q.","No saved sales on this date.":"Bu sana uchun saqlangan savdolar yo‘q.","This report shows sales and returns currently saved in Stock Book for the selected date and store. If it shows 0 lines while BILLZ has sales, this means those source transactions have not been synced into Stock Book yet; run BILLZ > Sync all BILLZ data for that date range, then use the comparison tool to check each store. Quantities use the recorded sale date; exact transaction time or revenue is shown only when the source records contain it.":"Bu hisobot Stock Book da saqlangan savdolarni ko‘rsatadi. Ko‘rinmayotgan eski kunni ko‘rish uchun avval BILLZ da shu sana oralig‘ini sinxronlang. Miqdorlar qayd etilgan savdo sanasi bo‘yicha hisoblanadi; aniq vaqt yoki tushum faqat manba yozuvlarida mavjud bo‘lsa ko‘rsatiladi.",
+ "No sales found for this date and store.":"Bu sana va do‘kon uchun savdo topilmadi.","No records for this store and day.":"Bu do‘kon va kun uchun yozuvlar yo‘q.","No saved sales on this date.":"Bu sana uchun saqlangan savdolar yo‘q.","This report includes sales already saved in Stock Book. To see an older day not shown here, sync that date range in Billz first. Quantities use the recorded sale date; exact transaction time or revenue is shown only when the source records contain it.":"Bu hisobot Stock Book da saqlangan savdolarni ko‘rsatadi. Ko‘rinmayotgan eski kunni ko‘rish uchun avval BILLZ da shu sana oralig‘ini sinxronlang. Miqdorlar qayd etilgan savdo sanasi bo‘yicha hisoblanadi; aniq vaqt yoki tushum faqat manba yozuvlarida mavjud bo‘lsa ko‘rsatiladi.",
  "Daily report":"Kunlik hisobot","Download product Excel":"Mahsulot Excel faylini yuklab olish","Product performance":"Mahsulot natijalari","Daily units sold and imported · last 14 active dates":"Kunlik sotilgan va kirim qilingan dona · oxirgi 14 faol sana",
  "Add stock":"Qoldiq qo‘shish","Edit product":"Mahsulotni tahrirlash","Type how many pieces to add to each store. Leave a store empty to skip it.":"Har bir do‘konga qo‘shiladigan dona sonini kiriting. O‘tkazib yuborish uchun do‘kon maydonini bo‘sh qoldiring.",
  "Add pieces":"Dona qo‘shish","Change photo":"Rasmni almashtirish","Add a photo":"Rasm qo‘shish","Drop a picture here or tap to choose":"Rasmni shu yerga tashlang yoki tanlash uchun bosing",
@@ -2279,12 +2243,12 @@ uz: {
  "No items yet. Search above or upload an Excel file.":"Hozircha mahsulot yo‘q. Yuqoridan qidiring yoki Excel fayl yuklang.","Could not read this file.":"Faylni o‘qib bo‘lmadi.","Could not load the Excel library":"Excel kutubxonasini yuklab bo‘lmadi","The Excel reader did not load. Check your internet and refresh the page.":"Excel o‘quvchi yuklanmadi. Internetni tekshirib, sahifani yangilang.","Only Excel files (.xlsx or .xls) are accepted.":"Faqat Excel fayllari (.xlsx yoki .xls) qabul qilinadi.",
  "The file ":"Fayl ","Upload a sales report first.":"Avval savdo hisobotini yuklang.","Upload an Excel file, or choose No.":"Excel fayl yuklang yoki Yo‘q variantini tanlang.","This does not look like a sales report. Columns found:":"Bu savdo hisoboti emasga o‘xshaydi. Topilgan ustunlar:","No known columns found. Columns in your file:":"Tanish ustunlar topilmadi. Fayldagi ustunlar:",
  "Color not supplied":"Rang ko‘rsatilmagan","Color not recorded":"Rang qayd etilmagan","Color needs checking":"Rangni tekshirish kerak","Missing color":"Rang kiritilmagan","Not tracked":"Hisobga olinmaydi","Not specified":"Ko‘rsatilmagan","Accessory option":"Aksessuar varianti","Available colors":"Mavjud ranglar","Not tracked · accessories":"Hisobga olinmaydi · aksessuarlar","Clothing/shoe missing required color":"Kiyim/oyoq kiyimda majburiy rang ko‘rsatilmagan","Missing color · clothing":"Rang yo‘q · kiyim","Missing color · shoes":"Rang yo‘q · oyoq kiyim","No color supplied":"Rang ko‘rsatilmagan","Colors in detail":"Batafsil ranglar",
- "Access Management":"Kirish huquqlarini boshqarish","Setup required":"Sozlash talab qilinadi","Choose a chat...":"Chatni tanlang...","Find Telegram chats":"Telegram chatlarini topish","Save group":"Guruhni saqlash","Save group & give access":"Guruhni saqlash va ruxsat berish","Find group":"Guruhni topish","Enable Dashboard button":"Dashboard tugmasini yoqish","Connected Telegram group":"Ulangan Telegram guruhi","Open Dashboard":"Dashboardni ochish","Access Management":"Kirish huquqlarini boshqarish","All reports stay inside the Telegram Mini App. No chat messages or photos are sent.":"Barcha hisobotlar Telegram Mini App ichida ko‘rinadi. Chatga xabar yoki rasm yuborilmaydi.",
+ "Telegram delivery":"Telegram orqali yuborish","Setup required":"Sozlash talab qilinadi","Choose a chat...":"Chatni tanlang...","Find Telegram chats":"Telegram chatlarini topish","Save chat & send test":"Chatni saqlash va sinov yuborish","Send selected day now":"Tanlangan kun hisobotini yuborish","Enable automatic daily report":"Kunlik avtomatik hisobotni yoqish","Daily report to @wardareport2026_bot at 22:30 Tashkent time, after the final BILLZ transaction sync.":"BILLZ bilan yakuniy sinxronlashdan so‘ng har kuni Toshkent vaqti bilan 22:30 da @wardareport2026_bot ga hisobot yuboriladi.",
  "Could not send report:":"Hisobot yuborilmadi:","Could not save Telegram settings:":"Telegram sozlamalari saqlanmadi:","Telegram connection failed:":"Telegram bilan ulanish amalga oshmadi:","Checking bot and sending a test message…":"Bot tekshirilmoqda va sinov xabari yuborilmoqda…","Looking for messages sent to your bot…":"Botga yuborilgan xabarlar qidirilmoqda…",
  "Chat saved":"Chat saqlandi","Not saved.":"Saqlanmadi.","No data for this date.":"Bu sana uchun ma’lumot yo‘q.","No sales.":"Savdo yo‘q.","No sales found for this date and store.":"Bu sana va do‘kon uchun savdo topilmadi.","Last sync:":"Oxirgi sinxronlash:","Download Excel":"Excel yuklab olish","Download CSV":"CSV yuklab olish","Download template":"Shablonni yuklab olish","All stores":"Barcha do‘konlar","No category":"Kategoriya yo‘q","not tracked":"hisobga olinmaydi","not specified":"ko‘rsatilmagan",
  "Top brands":"Eng yaxshi brendlar","Top colors":"Eng ko‘p sotilgan ranglar","Top products":"Eng ko‘p sotilgan mahsulotlar","Top 10 products":"Top 10 mahsulot","Daily summary":"Kunlik xulosa","Sales summary":"Savdo xulosasi","Imports":"Kirimlar","Write-offs":"Hisobdan chiqarishlar","Write-off causes":"Hisobdan chiqarish sabablari","Net sales":"Sof savdo","Returns":"Qaytarishlar","Revenue":"Tushum","Profit":"Foyda","Margin":"Marja","Brand":"Brend","Category":"Kategoriya","Color":"Rang","Size":"O‘lcham","Barcode":"Shtrix-kod","SKU":"SKU","Article":"Artikul","Name":"Nomi","Store":"Do‘kon","Date":"Sana","Quantity":"Miqdor","Price":"Narx","Purchase price":"Xarid narxi","Selling price":"Sotuv narxi","Supplier":"Yetkazib beruvchi","Seller":"Sotuvchi","Reason":"Sabab","Activity":"Amaliyot","Note":"Izoh",
  "History":"Tarix","Actions in history":"Tarixdagi amallar","Removed from stock":"Qoldiqdan chiqarilgan","Records deleted":"Yozuvlar o‘chirildi","Deleted record":"O‘chirilgan yozuv","Deleted product":"O‘chirilgan mahsulot","Deleted removal":"O‘chirilgan hisobdan chiqarish","Deleted removal":"O‘chirilgan hisobdan chiqarish","No problems found":"Muammo topilmadi","quantity missing":"miqdor ko‘rsatilmagan","Main place (old records)":"Asosiy joy (eski yozuvlar)","Sold but not in catalog":"Sotilgan, lekin katalogda yo‘q",
- "Home":"Bosh sahifa","Catalog":"Katalog","Transfer":"Ko‘chirish","Import":"Kirim","Sales":"Savdo","Remove":"Hisobdan chiqarish","Report":"Hisobot","Style":"Ko‘rinish","Dashboard":"Boshqaruv paneli","Reports":"Hisobotlar","Theme":"Mavzu","Spacing":"Oraliq","Corners":"Burchaklar","Comfortable":"Qulay","Compact":"Ixcham","Round":"Dumaloq","Square":"Kvadrat","Log out":"Chiqish","O‘zbekcha":"O‘zbekcha","English":"Inglizcha","Русский":"Ruscha","New transfer":"Yangi ko‘chirish","New import":"Yangi kirim","New sale":"Yangi savdo","New removal":"Yangi hisobdan chiqarish","Save group":"Guruhni saqlash","Save group & give access":"Guruhni saqlash va ruxsat berish","Find group":"Guruhni topish","Enable Dashboard button":"Dashboard tugmasini yoqish","Connected Telegram group":"Ulangan Telegram guruhi"
+ "Home":"Bosh sahifa","Catalog":"Katalog","Transfer":"Ko‘chirish","Import":"Kirim","Sales":"Savdo","Remove":"Hisobdan chiqarish","Report":"Hisobot","Style":"Ko‘rinish","Dashboard":"Boshqaruv paneli","Reports":"Hisobotlar","Theme":"Mavzu","Spacing":"Oraliq","Corners":"Burchaklar","Comfortable":"Qulay","Compact":"Ixcham","Round":"Dumaloq","Square":"Kvadrat","Log out":"Chiqish","O‘zbekcha":"O‘zbekcha","English":"Inglizcha","Русский":"Ruscha","New transfer":"Yangi ko‘chirish","New import":"Yangi kirim","New sale":"Yangi savdo","New removal":"Yangi hisobdan chiqarish","Save chat & send test":"Chatni saqlash va sinov yuborish"
 },
 ru: {
  "Stock Book":"Stock Book","Login":"Вход","Password":"Пароль","Log in":"Войти",
@@ -2306,7 +2270,7 @@ ru: {
  "Deliver to store":"Доставить в магазин","Import list":"Список поступлений","Save import":"Сохранить поступление","Add an item by hand":"Добавить товар вручную","Add to list":"Добавить в список","Clear form":"Очистить форму",
  "Today":"Сегодня","Yesterday":"Вчера","Previous day":"Предыдущий день","Next day":"Следующий день","Daily sales report":"Ежедневный отчёт о продажах","Historical sales for the selected sale date · not the date you uploaded the file":"Исторические продажи за выбранную дату продажи · не за дату загрузки файла",
  "Gross units sold":"Всего продано, шт.","Sales / return lines":"Строки продаж / возвратов","sale lines":"строк продаж","return lines":"строк возвратов","Distinct products":"Уникальных товаров","Top products on":"Лидеры продаж за","Store summary":"Сводка по магазинам","Product summary":"Сводка по товарам","Sales line details":"Детали строк продаж","Showing first 300 products. Excel includes every row.":"Показаны первые 300 товаров. В Excel включены все строки.","Showing 500 lines. Excel includes all":"Показаны 500 строк. В Excel включены все",
- "No sales found for this date and store.":"За эту дату и магазин продажи не найдены.","No records for this store and day.":"За этот день по магазину записей нет.","No saved sales on this date.":"За эту дату сохранённых продаж нет.","This report shows sales and returns currently saved in Stock Book for the selected date and store. If it shows 0 lines while BILLZ has sales, this means those source transactions have not been synced into Stock Book yet; run BILLZ > Sync all BILLZ data for that date range, then use the comparison tool to check each store. Quantities use the recorded sale date; exact transaction time or revenue is shown only when the source records contain it.":"Отчёт содержит продажи, уже сохранённые в Stock Book. Чтобы увидеть более ранний день, сначала синхронизируйте этот период из BILLZ. Количество рассчитывается по дате продажи; точное время или выручка показываются только при наличии этих данных в источнике.",
+ "No sales found for this date and store.":"За эту дату и магазин продажи не найдены.","No records for this store and day.":"За этот день по магазину записей нет.","No saved sales on this date.":"За эту дату сохранённых продаж нет.","This report includes sales already saved in Stock Book. To see an older day not shown here, sync that date range in Billz first. Quantities use the recorded sale date; exact transaction time or revenue is shown only when the source records contain it.":"Отчёт содержит продажи, уже сохранённые в Stock Book. Чтобы увидеть более ранний день, сначала синхронизируйте этот период из BILLZ. Количество рассчитывается по дате продажи; точное время или выручка показываются только при наличии этих данных в источнике.",
  "Daily report":"Ежедневный отчёт","Download product Excel":"Скачать Excel по товару","Product performance":"Показатели товара","Daily units sold and imported · last 14 active dates":"Продано и принято за день · последние 14 активных дат",
  "Add stock":"Добавить остаток","Edit product":"Изменить товар","Type how many pieces to add to each store. Leave a store empty to skip it.":"Укажите количество единиц для добавления в каждый магазин. Оставьте поле пустым, чтобы пропустить магазин.",
  "Add pieces":"Добавить шт.","Change photo":"Изменить фото","Add a photo":"Добавить фото","Drop a picture here or tap to choose":"Перетащите изображение сюда или нажмите, чтобы выбрать",
@@ -2322,7 +2286,7 @@ ru: {
  "No items yet. Search above or upload an Excel file.":"Пока нет товаров. Выполните поиск или загрузите файл Excel.","Could not read this file.":"Не удалось прочитать файл.","Could not load the Excel library":"Не удалось загрузить библиотеку Excel","The Excel reader did not load. Check your internet and refresh the page.":"Не загрузился модуль чтения Excel. Проверьте интернет и обновите страницу.","Only Excel files (.xlsx or .xls) are accepted.":"Принимаются только файлы Excel (.xlsx или .xls).",
  "Upload a sales report first.":"Сначала загрузите отчёт о продажах.","This does not look like a sales report. Columns found:":"Этот файл не похож на отчёт о продажах. Найдены столбцы:","No known columns found. Columns in your file:":"Не найдены известные столбцы. Столбцы в вашем файле:",
  "Color not supplied":"Цвет не указан","Color not recorded":"Цвет не записан","Color needs checking":"Цвет нужно проверить","Missing color":"Отсутствует цвет","Not tracked":"Не отслеживается","Not specified":"Не указано","Accessory option":"Вариант аксессуара","Available colors":"Доступные цвета","Not tracked · accessories":"Не отслеживается · аксессуары","Clothing/shoe missing required color":"У одежды/обуви не указан обязательный цвет","Missing color · clothing":"Нет цвета · одежда","Missing color · shoes":"Нет цвета · обувь","No color supplied":"Цвет не указан","Colors in detail":"Подробности по цветам",
- "Access Management":"Управление доступом","Setup required":"Требуется настройка","Choose a chat...":"Выберите чат...","Find Telegram chats":"Найти чаты Telegram","Save group":"Сохранить группу","Save group & give access":"Сохранить группу и предоставить доступ","Find group":"Найти группу","Enable Dashboard button":"Включить кнопку Dashboard","Connected Telegram group":"Подключённая группа Telegram","Open Dashboard":"Открыть Dashboard","Access Management":"Управление доступом","All reports stay inside the Telegram Mini App. No chat messages or photos are sent.":"Все отчёты доступны только внутри Telegram Mini App. Сообщения и фотографии в чат не отправляются.",
+ "Telegram delivery":"Отправка в Telegram","Setup required":"Требуется настройка","Choose a chat...":"Выберите чат...","Find Telegram chats":"Найти чаты Telegram","Save chat & send test":"Сохранить чат и отправить тест","Send selected day now":"Отправить отчёт за выбранный день","Enable automatic daily report":"Включить ежедневный автоматический отчёт","Daily report to @wardareport2026_bot at 22:30 Tashkent time, after the final BILLZ transaction sync.":"Ежедневный отчёт для @wardareport2026_bot в 22:30 по Ташкенту после последней синхронизации операций BILLZ.",
  "Could not send report:":"Не удалось отправить отчёт:","Could not save Telegram settings:":"Не удалось сохранить настройки Telegram:","Telegram connection failed:":"Ошибка подключения к Telegram:","Checking bot and sending a test message…":"Проверка бота и отправка тестового сообщения…","Looking for messages sent to your bot…":"Поиск сообщений, отправленных вашему боту…",
  "Chat saved":"Чат сохранён","Not saved.":"Не сохранено.","No data for this date.":"Нет данных за эту дату.","No sales.":"Продаж нет.","Last sync:":"Последняя синхронизация:","Download Excel":"Скачать Excel","Download CSV":"Скачать CSV","Download template":"Скачать шаблон","All stores":"Все магазины","No category":"Нет категории",
  "Top brands":"Лучшие бренды","Top colors":"Популярные цвета","Top products":"Лидеры продаж","Top 10 products":"Топ-10 товаров","Daily summary":"Итоги дня","Sales summary":"Итоги продаж","Imports":"Поступления","Write-offs":"Списания","Write-off causes":"Причины списаний","Net sales":"Чистые продажи","Returns":"Возвраты","Revenue":"Выручка","Profit":"Прибыль","Margin":"Маржа","Brand":"Бренд","Category":"Категория","Color":"Цвет","Size":"Размер","Barcode":"Штрихкод","SKU":"Артикул","Article":"Артикул","Name":"Название","Store":"Магазин","Date":"Дата","Quantity":"Количество","Price":"Цена","Purchase price":"Закупочная цена","Selling price":"Цена продажи","Supplier":"Поставщик","Seller":"Продавец","Reason":"Причина","Activity":"Операция","Note":"Примечание",
@@ -2350,7 +2314,7 @@ Object.assign(UI_LANG.uz,{
  "Sales by store":"Do‘konlar bo‘yicha savdo","Sales by brand":"Brendlar bo‘yicha savdo","Sales by color":"Ranglar bo‘yicha savdo","Sales by size":"O‘lchamlar bo‘yicha savdo",
  "Total sales":"Jami savdo","Total revenue":"Jami tushum","Units sold":"Sotilgan dona","Units imported":"Kirim qilingan dona",
  "No transactions found.":"Tranzaksiyalar topilmadi.","No imports found.":"Kirimlar topilmadi.","No transfers found.":"Ko‘chirishlar topilmadi.",
- "Save group":"Guruhni saqlash","Save group & give access":"Guruhni saqlash va ruxsat berish","Find group":"Guruhni topish","Enable Dashboard button":"Dashboard tugmasini yoqish","Connected Telegram group":"Ulangan Telegram guruhi","Open Dashboard":"Dashboardni ochish","Access Management":"Kirish huquqlarini boshqarish",
+ "Save chat & send test":"Chatni saqlash va sinov yuborish","Send selected day now":"Tanlangan kun hisobotini yuborish","Enable automatic daily report":"Kunlik avtomatik hisobotni yoqish",
  "Recent chats from your bot":"Botdagi so‘nggi chatlar","Telegram chat ID":"Telegram chat ID","Setup required":"Sozlash kerak",
  "Use /start to connect your Telegram bot.":"Telegram botni ulash uchun /start yuboring.",
  "Color is required for clothing and shoes.":"Kiyim va oyoq kiyimlar uchun rang ko‘rsatilishi shart.",
@@ -2373,7 +2337,7 @@ Object.assign(UI_LANG.ru,{
  "Sales by store":"Продажи по магазинам","Sales by brand":"Продажи по брендам","Sales by color":"Продажи по цветам","Sales by size":"Продажи по размерам",
  "Total sales":"Всего продаж","Total revenue":"Общая выручка","Units sold":"Продано, шт.","Units imported":"Поступило, шт.",
  "No transactions found.":"Операции не найдены.","No imports found.":"Поступления не найдены.","No transfers found.":"Перемещения не найдены.",
- "Save group":"Сохранить группу","Save group & give access":"Сохранить группу и предоставить доступ","Find group":"Найти группу","Enable Dashboard button":"Включить кнопку Dashboard","Connected Telegram group":"Подключённая группа Telegram","Open Dashboard":"Открыть Dashboard","Access Management":"Управление доступом",
+ "Save chat & send test":"Сохранить чат и отправить тест","Send selected day now":"Отправить отчёт за выбранный день","Enable automatic daily report":"Включить ежедневный автоматический отчёт",
  "Recent chats from your bot":"Последние чаты вашего бота","Telegram chat ID":"ID чата Telegram","Setup required":"Требуется настройка",
  "Use /start to connect your Telegram bot.":"Отправьте /start, чтобы подключить Telegram-бота.",
  "Color is required for clothing and shoes.":"Для одежды и обуви необходимо указать цвет.",
@@ -2569,10 +2533,7 @@ onAuthStateChanged(auth,async u=>{
   }
  }catch(err){console.warn('Local Stock Book cache unavailable:',err);}
  if(epoch!==_authEpoch||!auth.currentUser||auth.currentUser.uid!==u.uid)return;
- _snapshotUnsub=onSnapshot(collection(fs,'moves'),async snap=>{
-  // A server-written marker lets already-open sessions on other devices sign out immediately.
-  const revokeDoc=snap.docs.find(d=>d.id==='auth_revoke_'+u.uid);
-  if(revokeDoc){const revokedAt=Number(revokeDoc.data().authSessionRevokedAtMs)||0;if(revokedAt){try{const tokenInfo=await u.getIdTokenResult(),authAt=Date.parse(tokenInfo.authTime||'')||0;if(authAt&&authAt<=revokedAt){const loginErr=$('#le');if(loginErr)loginErr.textContent='This account was logged out from all devices. Please sign in again.';await signOut(auth);return}}catch(e){console.warn('Could not check remote session revocation:',e)}}}
+ _snapshotUnsub=onSnapshot(collection(fs,'moves'),snap=>{
   if(!_snapshotReady){
    _movesById.clear();
    snap.docs.forEach(d=>_movesById.set(d.id,{...d.data(),_id:d.id}));

@@ -31,8 +31,8 @@ async function supabaseRequest(path, options = {}) {
   if (!body) return null;
   try { return JSON.parse(body); } catch { return body; }
 }
-async function saveTelegramSettings(chatId, enabled = false) {
-  if (!getSupabaseConfig()) throw new Error('Access Management is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the hosting service.');
+async function saveTelegramSettings(chatId, enabled = true) {
+  if (!getSupabaseConfig()) return false;
   await supabaseRequest('stock_book_telegram_settings?on_conflict=id', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: { id: 'default', chat_id: String(chatId), enabled: enabled !== false, timezone: TZ, daily_time: '22:30', updated_at: new Date().toISOString() }
@@ -96,18 +96,7 @@ const cut = (v, n = 160) => { const s = String(v == null ? '' : v).trim(); retur
 const qty = x => Math.round(Number(x) || 0);
 const picUrl = v => typeof v === 'string' && (/^https?:\/\//i.test(v) || /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(v)) ? v : '';
 
-// Strict allowlist: only Telegram account, group-membership, webhook and menu configuration
-// methods are permitted. Any message/photo/edit/forward/delete method is blocked by default.
-const TELEGRAM_SAFE_METHODS = new Set([
-  'getMe','getWebhookInfo','getChat','getChatMember','getUpdates',
-  'setWebhook','setMyCommands','setChatMenuButton','setMyShortDescription','setMyDescription',
-  'answerCallbackQuery'
-]);
 async function telegram(method, token, payload, timeoutMs = 20000) {
-  if (!TELEGRAM_SAFE_METHODS.has(String(method))) {
-    console.warn('Blocked Telegram method in Dashboard-only mode:', method);
-    throw new Error('Telegram chat delivery and message changes are disabled. Open the Dashboard Mini App.');
-  }
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -131,10 +120,52 @@ async function telegram(method, token, payload, timeoutMs = 20000) {
   }
   throw lastError || new Error(`Telegram ${method} failed after retries.`);
 }
-// Legacy report-photo helpers are retained as inert compatibility shims.
-// Product photos are rendered by the Mini App and are never uploaded to Telegram chats.
-async function sendOnePhoto() { return false; }
-async function sendPhotoAlbum() { return 0; }
+async function sendOnePhoto(token, chatId, item) {
+  const p = picUrl(item.photo);
+  if (!p) return false;
+  const caption = cut(item.caption || '', 900);
+  // Try Telegram's remote URL support first; this is the smallest and fastest transfer.
+  if (/^https?:\/\//i.test(p)) {
+    try { await telegram('sendPhoto', token, { chat_id: chatId, photo: p, caption, parse_mode: 'HTML' }, 6000); return true; }
+    catch (_) { /* If Telegram cannot fetch a protected/redirected CDN URL, fetch it here and upload bytes. */ }
+  }
+  try {
+    let bytes, mime = 'image/jpeg', filename = 'product.jpg';
+    if (/^data:image\//i.test(p)) {
+      const m = p.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i); if (!m) return false;
+      mime = m[1]; bytes = Buffer.from(m[2], 'base64'); filename = mime.includes('png') ? 'product.png' : 'product.jpg';
+    } else {
+      const r = await fetch(p, { signal: AbortSignal.timeout(5000) });
+      if (!r.ok) return false;
+      mime = (r.headers.get('content-type') || 'image/jpeg').split(';')[0];
+      const ab = await r.arrayBuffer(); if (ab.byteLength > 9 * 1024 * 1024 || ab.byteLength < 100) return false;
+      bytes = Buffer.from(ab); filename = mime.includes('png') ? 'product.png' : mime.includes('webp') ? 'product.webp' : 'product.jpg';
+    }
+    if (!/^image\//i.test(mime) || bytes.length > 9 * 1024 * 1024) return false;
+    const form = new FormData(); form.set('chat_id', String(chatId)); form.set('caption', caption); form.set('parse_mode', 'HTML');
+    form.set('photo', new Blob([bytes], { type: mime }), filename);
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(6000) });
+    const data = await res.json().catch(() => ({})); return !!(res.ok && data.ok);
+  } catch (e) { console.warn('Photo send skipped:', cut(e.message, 160)); return false; }
+}
+async function sendPhotoAlbum(token, chatId, items, maxItems) {
+  const list = items.filter(x => picUrl(x.photo)).slice(0, maxItems);
+  if (!list.length) return 0;
+  // Group public URLs as an album for a compact Telegram view. Individual upload is a fallback.
+  if (list.length >= 2 && list.every(x => /^https?:\/\//i.test(x.photo))) {
+    try {
+      await telegram('sendMediaGroup', token, { chat_id: chatId, media: list.map(x => ({ type: 'photo', media: x.photo, caption: cut(x.caption || '', 900), parse_mode: 'HTML' })) }, 7000);
+      return list.length;
+    } catch (e) { console.warn('Photo album URL fallback:', cut(e.message, 180)); }
+  }
+  let sent = 0;
+  // Limit concurrent fallback sends to five, keeping the daily function inside Netlify's short scheduled runtime.
+  for (let i = 0; i < list.length; i += 5) {
+    const results = await Promise.all(list.slice(i, i + 5).map(x => sendOnePhoto(token, chatId, x).catch(() => false)));
+    sent += results.filter(Boolean).length;
+  }
+  return sent;
+}
 
 function variantLookup(variants) {
   const barcode = new Map(), id = new Map(), skus = new Map();
@@ -362,13 +393,13 @@ function dashboardRow(chatId) {
   const bot = process.env.TELEGRAM_BOT_USERNAME || 'wardareport2026_bot';
   // Once the Main Mini App is configured in BotFather (TELEGRAM_MAIN_MINIAPP=1) this link opens the dashboard right inside the group.
   if (String(process.env.TELEGRAM_MAIN_MINIAPP || '') === '1') return [{ text: '📊 Dashboardni ochish', url: `https://t.me/${bot}?startapp=dash` }];
-  return [{ text: '📊 Dashboardni ochish', url: `https://t.me/${bot}?start=dash` }];
+  return [{ text: '📊 Dashboard (shaxsiy chatda)', url: `https://t.me/${bot}?start=dash` }];
 }
 function menuKeyboard(period = '0', chatId) {
   return { inline_keyboard: [dashboardRow(chatId === undefined ? 0 : chatId)] }; // one button: the Mini App dashboard
 }
 function menuText() {
-  return '📊 <b>HISOBOT</b>\n\nDashboardda kunlik, haftalik va oylik hisobotlar alohida, taqqoslash esa alohida bo‘limda. Pastdagi tugmani bosing.';
+  return '📊 <b>HISOBOT</b>\n\nDashboardda: kunlik, haftalik, oylik hisobot va taqqoslash. Pastdagi tugmani bosing.';
 }
 async function sendMenu(token, chatId, period = '0', intro) {
   return telegram('sendMessage', token, { chat_id: chatId, text: menuText(period, intro), parse_mode: 'HTML', reply_markup: menuKeyboard(period, chatId) });
@@ -483,12 +514,11 @@ function webhookSecret() { return require('crypto').createHash('sha256').update(
 // Pull today's final BILLZ transaction snapshot on the server immediately before the scheduled Telegram report.
 // Writes use deterministic document IDs and small batches; previous BILLZ-synced records for the same date
 // are removed only after the replacement snapshot has been saved successfully.
-let catalogMemo = null; // warm in-process catalog cache
-let catalogMemoPromise = null; // coalesce concurrent cold-start catalog reads
+let catalogMemo = null; // the catalog (11k+ products) is slow to read, so a warm server reuses it for 10 minutes
 async function collectBillz(rangeFrom, rangeTo, opts = {}) {
   // Fetches sales / imports / write-offs for rangeFrom..rangeTo (inclusive, YYYY-MM-DD) directly from BILLZ.
-  const secret = process.env.BILLZ_INT_KEY_2 || process.env.BILLZ_INT_KEY || process.env.BILLZ_TME_KEY || process.env.BILLZ_SECRET;
-  if (!secret) throw new Error('BILLZ_INT_KEY_2, BILLZ_INT_KEY, BILLZ_TME_KEY or BILLZ_SECRET is missing.');
+  const secret = process.env.BILLZ_INT_KEY_2 || process.env.BILLZ_INT_KEY || process.env.BILLZ_SECRET;
+  if (!secret) throw new Error('BILLZ_INT_KEY_2 (or BILLZ_INT_KEY / BILLZ_SECRET) is missing.');
   const API = 'https://api-admin.billz.ai';
   const PLATFORM_ID = '7d4a4c38-dd84-4902-b744-0488b80a4c01';
   const login = await fetch(API + '/v1/auth/login', {
@@ -560,13 +590,11 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
     const bc = String(r.product_barcode || r.barcode || (a && a.barcode) || '').trim();
     const sku = String(r.product_sku || r.sku || r.article || (a && a.sku) || '').trim();
     const id = String(r.product_id || (a && a.id) || '').trim();
-    const attrs = [...(Array.isArray(r.product_attributes) ? r.product_attributes : []), ...(Array.isArray(r.attributes) ? r.attributes : []),
-      ...(Array.isArray(a.product_attributes) ? a.product_attributes : []), ...(Array.isArray(a.attributes) ? a.attributes : []),
-      ...(Array.isArray(r.variant_attributes) ? r.variant_attributes : []), ...(Array.isArray(a.variant_attributes) ? a.variant_attributes : [])];
+    const attrs = [...(Array.isArray(a.product_attributes) ? a.product_attributes : []), ...(Array.isArray(a.attributes) ? a.attributes : [])];
     let color = '', size = '';
     for (const x of attrs) {
-      const n = String(x.attribute_name || x.attribute || ((x.name && (x.value || x.attribute_value || x.value_name)) ? x.name : '')).toLowerCase();
-      const val = String(x.attribute_value || x.value_name || x.value || (x.attribute_name ? x.name : '')).trim();
+      const n = String(x.attribute_name || x.name || x.attribute || '').toLowerCase();
+      const val = String(x.attribute_value || x.value_name || x.value || x.name || '').trim();
       if (!val) continue;
       if (!color && /color|colour|цвет|rang/.test(n)) color = val;
       if (!size && /size|размер|razmer|o.?lcham/.test(n)) size = val;
@@ -574,8 +602,8 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
     let match = (bc && catalogByBarcode.get(bc)) || (id && catalogById.get(id)) || null;
     if (!match && sku) {
       const candidates = (catalogBySku.get(sku) || []).filter(v => (!color || !v.color || color.toLowerCase() === v.color.toLowerCase()) && (!size || !v.size || size.toLowerCase() === v.size.toLowerCase()));
-      // Never guess between multiple BILLZ variants sharing an SKU.
       if (candidates.length === 1) match = candidates[0];
+      else if (candidates.length > 1) match = candidates.find(v => v.photo) || candidates[0];
     }
     const photo = [a.image_url, a.photo_url, a.image, a.photo, r.image_url, r.photo_url, r.image, r.photo].find(x => typeof x === 'string' && /^https?:\/\//i.test(x)) || (match && match.photo) || '';
     return { name: a.name || r.product_base_name || r.product_name || (match && match.name) || '', sku, art: sku, bc, brand: a.brand_name || r.product_brand_name || r.brand_name || r.brand || '', cat: a.category_name || r.category_name || '', color: color || (match && match.color) || '', size: size || (match && match.size) || '', productId: id || (match && match.id) || '', photo };
@@ -585,12 +613,15 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
   const shopsArg = shopIds.join(',');
   const daily = {}; // daily[store][date] = { s: sold, r: returned, i: imported, w: written off }
   const bump = (st, dt, k, v) => { const o = ((daily[st] ||= {})[dt] ||= { s: 0, r: 0, i: 0, w: 0 }); o[k] += v; };
-  const salesParams = { start_date: rangeFrom, end_date: rangeTo, shop_ids: shopsArg, detalization: 'day', detalization_by_position: 'true', price_type: 0, currency: 'UZS' };
+  // BILLZ own-total check starts together with the main load (no extra waiting)
+  const totalP = opts.verify
+    ? fetchRows('/v1/product-general-table', { start_date: rangeFrom, end_date: rangeTo, shop_ids: shopsArg, price_type: 0, currency: 'UZS' }, ['products_stats_by_date', 'products', 'items', 'rows'], 100).catch(e => { console.warn('BILLZ total check failed:', cut(e.message, 160)); return null; })
+    : Promise.resolve(null);
   const [imports, writeoffs, sales, catalog] = await Promise.all([
     fetchRows('/v1/import-report-table', { start_date: rangeFrom, end_date: rangeTo, shop_ids: shopsArg, import_type: 'import' }, ['rows']),
     fetchRows('/v1/write-off-report-table', { start_date: rangeFrom, end_date: rangeTo, shop_ids: shopsArg, currency: 'UZS' }, ['Items','items']),
-    fetchRows('/v1/product-general-table', salesParams, ['products_stats_by_date']),
-    loadBillzCatalog(fetchRows)
+    fetchRows('/v1/product-general-table', { start_date: rangeFrom, end_date: rangeTo, shop_ids: shopsArg, detalization: 'day', detalization_by_position: 'true', price_type: 0, currency: 'UZS' }, ['products_stats_by_date']),
+    (catalogMemo && Date.now() - catalogMemo.at < 10 * 60 * 1000 ? Promise.resolve(catalogMemo.rows) : fetchRows('/v2/products', { include_empty_stocks: 'true' }, ['products','items','Items','rows'], 100).then(rows => { catalogMemo = { at: Date.now(), rows }; return rows; }))
   ]);
 
   // The BILLZ daily sales report often omits product images. Resolve each sale
@@ -600,9 +631,8 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
     const attrs = [...(Array.isArray(r.product_attributes) ? r.product_attributes : []), ...(Array.isArray(r.attributes) ? r.attributes : []), ...(Array.isArray(r.variant_attributes) ? r.variant_attributes : [])];
     let color = '', size = '';
     for (const a of attrs) {
-      const n = String(a.attribute_name || a.attribute || ((a.name && (a.value || a.attribute_value || a.value_name)) ? a.name : '')).toLowerCase();
-      // BILLZ often places the visible attribute value in `name` (e.g. Цвет -> Фиолетовый).
-      const v = String(a.attribute_value || a.value_name || a.value || (a.attribute_name ? a.name : '')).trim();
+      const n = String(a.attribute_name || a.name || a.attribute || '').toLowerCase();
+      const v = String(a.attribute_value || a.value_name || a.value || '').trim();
       if (!v) continue;
       if (!color && /color|colour|цвет|rang/.test(n)) color = v;
       if (!size && /size|размер|razmer|o.?lcham/.test(n)) size = v;
@@ -682,14 +712,13 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
   }
   let verify = null; // independent check: BILLZ's own period total (no day split) vs. the day-by-day rows we use
   if (opts.verify) {
-    try {
-      // Compare like-for-like: the old check omitted day/position detail flags and compared a different aggregation.
-      const tot = await fetchRows('/v1/product-general-table', salesParams, ['products_stats_by_date'], 100);
+    const tot = await totalP;
+    if (tot) {
       let bs = 0, br = 0, ss = 0, sr = 0;
       for (const r of tot) { bs += Math.max(0, Number(r.sold_measurement_value) || 0); br += Math.max(0, Number(r.returned_measurement_value) || 0); }
       for (const days of Object.values(daily)) for (const v of Object.values(days)) { ss += v.s; sr += v.r; }
-      verify = { ok: Math.abs(bs - ss) < 0.5 && Math.abs(br - sr) < 0.5, bs: Math.round(bs), br: Math.round(br), ss: Math.round(ss), sr: Math.round(sr), comparison: 'same-day-position-detail' };
-    } catch (e) { console.warn('BILLZ total check failed:', cut(e.message, 160)); }
+      verify = { ok: Math.abs(bs - ss) < 0.5 && Math.abs(br - sr) < 0.5, bs: Math.round(bs), br: Math.round(br), ss: Math.round(ss), sr: Math.round(sr) };
+    }
   }
   const rows = [...generated.values()];
   return { rows, daily, verify, counts: { imports: imports.length, writeoffs: writeoffs.length, salesRows: sales.length, savedRows: rows.length } };
@@ -727,69 +756,6 @@ async function cacheGet(key) {
 }
 async function cacheSet(key, payload) {
   try { await supabaseRequest('stock_book_range_cache?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: { key, payload, updated_at: new Date().toISOString() }, timeoutMs: 25000 }); return true; } catch (e) { console.warn('Range cache not saved:', cut(e.message, 160)); return false; }
-}
-
-// Persist a compact BILLZ catalog between server cold starts. This avoids paging through
-// 10k+ variants on every new server process when the Mini App is opened.
-function compactCatalogRows(rows) {
-  const out=[];
-  const photoUrl = r => {
-    const photos=Array.isArray(r.photos)?r.photos:Array.isArray(r.images)?r.images:Array.isArray(r.product_images)?r.product_images:[];
-    const main=photos.find(x=>x&&(x.is_main||x.is_primary||x.main))||photos.find(Boolean)||{};
-    let v=r.main_image_url_full||r.main_image_url||r.main_image||r.image_url||r.photo_url||r.picture_url||r.product_image_url||r.photo_url_full||r.image||r.photo||
-      (typeof main==='string'?main:(main.photo_url||main.image_url||main.file_url||main.url||main.photo||''));
-    if(v&&typeof v==='object')v=v.url||v.src||v.file_url||v.photo_url||v.image_url||'';
-    return typeof v==='string'&&/^https?:\/\//i.test(v.trim())?v.trim():'';
-  };
-  const visit=(r,inherited={})=>{
-    if(!r||typeof r!=='object')return;
-    const m={...inherited,...r};
-    const baseName=m.product_base_name||m.base_name||m.base_product_name||m.name||m.product_name||'';
-    const attrs=[...(Array.isArray(m.product_attributes)?m.product_attributes:[]),...(Array.isArray(m.attributes)?m.attributes:[]),...(Array.isArray(m.variant_attributes)?m.variant_attributes:[])];
-    let color='',size='';
-    for(const a of attrs){
-      const label=String(a.attribute_name||a.attribute||((a.name&&(a.value||a.attribute_value||a.value_name))?a.name:'')).toLowerCase();
-      const value=String(a.attribute_value||a.value_name||a.value||(a.attribute_name?a.name:'')).trim();
-      if(!value)continue;
-      if(!color&&/color|colour|цвет|rang/.test(label))color=value;
-      if(!size&&/size|размер|razmer|o.?lcham/.test(label))size=value;
-    }
-    const id=String(m.id||m.product_id||m.variant_id||m.product_variant_id||'').trim();
-    const bc=String(m.barcode||m.product_barcode||m.ean||m.gtin||'').trim();
-    const sku=String(m.sku||m.product_sku||m.article||m.product_article||'').trim();
-    if(id||bc||sku)out.push({id,product_id:id,barcode:bc,product_barcode:bc,sku,product_sku:sku,product_base_name:baseName,product_name:baseName,
-      product_attributes:[...(color?[{attribute_name:'Цвет',name:color}]:[]),...(size?[{attribute_name:'Размер',name:size}]:[])],
-      main_image_url:photoUrl(m),brand_name:m.brand_name||m.product_brand_name||m.brand||'',category_name:m.category_name||m.product_category_name||'',parent_id:m.parent_id||''});
-    const children=Array.isArray(m.variations)?m.variations:Array.isArray(m.product_variants)?m.product_variants:Array.isArray(m.variants)?m.variants:Array.isArray(m.product_variations)?m.product_variations:[];
-    for(const child of children)visit({...m,...child,product_base_name:child.product_base_name||baseName,
-      product_attributes:child.product_attributes||child.attributes||child.variant_attributes||m.product_attributes||m.attributes||[],
-      photos:child.photos||child.images||child.product_images||m.photos||m.images||m.product_images||[],
-      main_image_url_full:child.main_image_url_full||m.main_image_url_full,main_image_url:child.main_image_url||m.main_image_url},{product_base_name:baseName});
-  };
-  rows.forEach(r=>visit(r));
-  const byIdentity=new Map();
-  for(const v of out){const k=v.id?'id:'+v.id:v.barcode?'bc:'+v.barcode:'sku:'+v.sku+'|'+(v.product_attributes[0]?.name||'')+'|'+(v.product_attributes[1]?.name||'');if(!byIdentity.has(k))byIdentity.set(k,v);}
-  return [...byIdentity.values()];
-}
-async function loadBillzCatalog(fetchRows) {
-  if(catalogMemo&&Date.now()-catalogMemo.at<10*60*1000)return catalogMemo.rows;
-  if(catalogMemoPromise)return catalogMemoPromise;
-  catalogMemoPromise=(async()=>{
-    const cacheKey='billz-catalog-v1';
-    try{
-      const saved=await cacheGet(cacheKey),age=Date.now()-Date.parse(saved&&saved.updated_at||'');
-      if(saved&&saved.payload&&Array.isArray(saved.payload.rows)&&saved.payload.rows.length&&age>=0&&age<6*60*60*1000){
-        catalogMemo={at:Date.now(),rows:saved.payload.rows};return catalogMemo.rows;
-      }
-    }catch(e){console.warn('BILLZ catalog cache read failed:',cut(e.message,120));}
-    const raw=await fetchRows('/v2/products',{include_empty_stocks:'true'},['products','items','Items','rows'],100);
-    const rows=compactCatalogRows(raw);catalogMemo={at:Date.now(),rows};
-    const bytes=Buffer.byteLength(JSON.stringify(rows),'utf8');
-    if(bytes<=5*1024*1024)void cacheSet(cacheKey,{version:1,rows}).catch(()=>{});
-    else console.warn('BILLZ catalog cache skipped because compact catalog is larger than 5 MB.');
-    return rows;
-  })().finally(()=>{catalogMemoPromise=null;});
-  return catalogMemoPromise;
 }
 async function getRangeRows(range, force) {
   const key = (range.monthKey ? 'month:' + range.monthKey : 'range:' + range.from + ':' + range.to);
@@ -954,11 +920,9 @@ function verifyInitData(initData, maxAgeSec = 86400) {
 const memberCache = new Map();
 async function isAuthorizedUser(userId) {
   const id = String(userId);
-  if (String(process.env.TELEGRAM_ALLOWED_USER_IDS || '').split(',').map(x => x.trim()).filter(Boolean).includes(id)) return true;
+  if (String(process.env.TELEGRAM_ALLOWED_USER_IDS || '').split(',').map(x => x.trim()).includes(id)) return true;
   const hit = memberCache.get(id);
-  // Cache only positive membership briefly. A newly-added manager should not remain denied
-  // because an earlier negative result was cached for several minutes.
-  if (hit && hit.ok && Date.now() - hit.at < 15000) return true;
+  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.ok;
   let ok = false;
   try {
     const cfg = await getTelegramSettings();
@@ -967,8 +931,7 @@ async function isAuthorizedUser(userId) {
       ok = ['creator', 'administrator', 'member'].includes(m.status) || (m.status === 'restricted' && m.is_member === true);
     }
   } catch (e) { console.warn('getChatMember failed (make the bot an admin of the group):', cut(e.message, 140)); }
-  if (ok) memberCache.set(id, { ok: true, at: Date.now() });
-  else memberCache.delete(id);
+  memberCache.set(id, { ok, at: Date.now() });
   return ok;
 }
 

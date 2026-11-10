@@ -1,5 +1,5 @@
 // Reads data from Billz for the Stock Book site. The Billz key stays here, on the server.
-// Reads BILLZ_INT_KEY_2, BILLZ_INT_KEY, BILLZ_TME_KEY, or legacy BILLZ_SECRET from Netlify environment variables.
+// Reads BILLZ_INT_KEY_2 (current name), BILLZ_INT_KEY, or legacy BILLZ_SECRET from Netlify environment variables.
 const API = 'https://api-admin.billz.ai';
 const PLATFORM_ID = '7d4a4c38-dd84-4902-b744-0488b80a4c01';
 const FIREBASE_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyAqFp2SG979LRDAFDCXfrhbam3eA8vtsbA';
@@ -25,8 +25,8 @@ const reply = (status, body) => ({
 });
 
 async function billzLogin() {
-  const secret = process.env.BILLZ_INT_KEY_2 || process.env.BILLZ_INT_KEY || process.env.BILLZ_TME_KEY || process.env.BILLZ_SECRET;
-  if (!secret) throw new Error('BILLZ_INT_KEY_2, BILLZ_INT_KEY, BILLZ_TME_KEY, or legacy BILLZ_SECRET is not set in Render environment variables.');
+  const secret = process.env.BILLZ_INT_KEY_2 || process.env.BILLZ_INT_KEY || process.env.BILLZ_SECRET;
+  if (!secret) throw new Error('BILLZ_INT_KEY_2, BILLZ_INT_KEY, or legacy BILLZ_SECRET is not set in Netlify environment variables.');
   const r = await fetch(API + '/v1/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'platform-id': PLATFORM_ID },

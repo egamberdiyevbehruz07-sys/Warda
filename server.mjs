@@ -9,8 +9,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const fnDir = path.join(root, 'netlify', 'functions');
 const PORT = Number(process.env.PORT) || 8080;
-const RELEASE = '2026-11-10-stockbook-cache-refresh-r4';
-const APP_VERSION = '1.4.0';
 // The functions build their own public address (webhook, Mini App button, background jobs) from URL.
 process.env.URL = process.env.URL || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 if (/localhost/.test(process.env.URL)) console.warn('WARNING: set PUBLIC_URL to your public https address (Render does this automatically).');
@@ -72,14 +70,13 @@ async function serveStatic(pathname, res) {
   if (!file.startsWith(root + path.sep) || /\.(mjs|cjs|sql|txt|toml)$/i.test(file)) return send(res, 404, 'Not found');
   try {
     const data = await fs.readFile(file);
-    send(res, 200, data, { 'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store', 'X-StockBook-Release': RELEASE });
+    send(res, 200, data, { 'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
   } catch { send(res, 404, 'Not found'); }
 }
 
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    if (url.pathname === '/__version') return send(res, 200, JSON.stringify({ release: RELEASE, version: APP_VERSION, accessPanel: 'Access Management', telegramChatReports: false, cachePolicy: 'no-store', commit: process.env.RENDER_GIT_COMMIT || null }), { 'Content-Type': 'application/json', 'X-StockBook-Release': RELEASE });
     if (url.pathname === '/healthz') return send(res, 200, 'ok'); // for the keep-awake pinger
     const m = url.pathname.match(/^\/\.netlify\/functions\/([\w-]+)\/?$/);
     if (m) return await callFunction(m[1], req, res, url);
@@ -101,7 +98,7 @@ setInterval(() => {
   const now = new Date(), key = now.toISOString().slice(0, 16);
   if (key === lastTick) return; lastTick = key;
   for (const [name, fn] of fns) {
-    if (fn.schedule && !name.includes('telegram-report') && cronMatch(fn.schedule, now)) {
+    if (fn.schedule && cronMatch(fn.schedule, now)) {
       console.log('Scheduled run:', name, key);
       Promise.resolve().then(() => fn.handler(new Request(`http://localhost:${PORT}/.netlify/functions/${name}`, { method: 'POST', body: '{}' }))).catch(e => console.error('Scheduled function failed:', name, e && e.message || e));
     }

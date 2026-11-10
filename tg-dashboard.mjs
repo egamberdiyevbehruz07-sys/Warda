@@ -11,7 +11,7 @@ export default async function tgDashboard(request) {
   let user;
   try { user = core.verifyInitData(String(body.initData || '')); } catch (e) { return json(500, { error: 'Bot is not configured.' }); }
   if (!user) return json(401, { error: 'Telegram imzosi tasdiqlanmadi. Dashboardni bot ichidan oching.' });
-  if (!(await core.isAuthorizedUser(user.id))) return json(403, { error: 'Bu Dashboard faqat Access Management bo‘limida ulangan Telegram guruhi a’zolari uchun. Guruh adminidan guruhga qo‘shishni so‘rang.' });
+  if (!(await core.isAuthorizedUser(user.id))) return json(403, { error: 'Sizga ruxsat berilmagan. Hisobot guruhining a’zosi bo‘lishingiz kerak.', userId: user.id });
 
   const base = { options: core.dashOptions(), weekOptions: core.dashWeekOptions(), dayOptions: core.dashDayOptions(), defaults: core.dashDefaults(), user: { id: user.id, name: user.first_name || '' } };
   const months = [...new Set((Array.isArray(body.months) ? body.months : []).map(String))].filter(core.validMonth).slice(0, 2);

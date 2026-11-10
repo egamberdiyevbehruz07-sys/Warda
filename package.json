@@ -1,11 +1,9 @@
 {
   "name": "stock-book-netlify",
-  "version": "1.4.0",
+  "version": "1.3.0",
   "private": true,
-  "description": "Warda Stock Book release 1.4.0 \u2014 versioned deployment refresh, Mini App performance and BILLZ verification updates",
-  "dependencies": {
-    "firebase-admin": "^13.5.0"
-  },
+  "description": "Stock Book with Firebase app data and Supabase-only Telegram reporting (runs on Netlify or any Node host)",
+  "dependencies": {},
   "scripts": {
     "start": "node server.mjs"
   },
