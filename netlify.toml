@@ -4,3 +4,10 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-store, max-age=0, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"

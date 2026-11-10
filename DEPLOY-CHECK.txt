@@ -1,0 +1,11 @@
+EXPECTED AFTER DEPLOYMENT
+Open /__version. It must return:
+  version: 1.4.0
+  release: 2026-11-10-stockbook-cache-refresh-r4
+  accessPanel: Access Management
+  telegramChatReports: false
+
+Also open Reports and look for the visible build label:
+  Build 1.4.0 · 10 Nov 2026 · Deployment verified
+
+If neither marker appears, the changed source has not reached the live service.
