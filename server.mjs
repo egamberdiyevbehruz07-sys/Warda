@@ -18,7 +18,9 @@ const fns = new Map(); // name -> { kind: 'v2' (Request/Response) | 'v1' (event/
 for (const f of await fs.readdir(fnDir)) {
   if (!/\.(mjs|js|cjs)$/.test(f)) continue;
   const name = f.replace(/\.(mjs|js|cjs)$/, '');
-  const mod = await import(pathToFileURL(path.join(fnDir, f)).href);
+  let mod;
+  try { mod = await import(pathToFileURL(path.join(fnDir, f)).href); }
+  catch (e) { console.error('Skipped broken function file', f, '-', e.message); continue; } // one bad file must not stop the whole server
   if (typeof mod.default === 'function') fns.set(name, { kind: 'v2', handler: mod.default, schedule: mod.config && mod.config.schedule });
   else if (mod.default && typeof mod.default.handler === 'function') fns.set(name, { kind: 'v1', handler: mod.default.handler });
   else if (typeof mod.handler === 'function') fns.set(name, { kind: 'v1', handler: mod.handler });
