@@ -1,11 +1,16 @@
-EXPECTED AFTER DEPLOYMENT
-Open /__version. It must return:
-  version: 1.4.0
-  release: 2026-11-10-stockbook-cache-refresh-r4
-  accessPanel: Access Management
-  telegramChatReports: false
+Warda Stock Book release check
 
-Also open Reports and look for the visible build label:
-  Build 1.4.0 · 10 Nov 2026 · Deployment verified
+Expected source markers:
+  package.json version: 1.5.0
+  BUILD-VERSION.txt: 2026-11-12-stockbook-report-reconcile-r5
+  dashboard cache namespace: 2026-11-12-r5
 
-If neither marker appears, the changed source has not reached the live service.
+After deployment:
+1. Open the Telegram bot's Dashboard Mini App.
+2. Select 12.11.2026 and wait until the update label disappears.
+3. Confirm the BILLZ totals comparison badge is green/matching.
+4. Select 09.11.2026, press refresh once, and wait for the background rebuild to finish.
+5. Confirm the historical date's BILLZ totals comparison badge is green/matching.
+6. If verification is warning/unavailable, do not consider the date reconciled; investigate the underlying BILLZ report and function logs.
+
+This code update is not a live deployment or a production-data audit.

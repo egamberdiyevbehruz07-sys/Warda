@@ -1,0 +1,20 @@
+STOCK BOOK r5 — GITHUB UPLOAD BUNDLE
+
+This is the active Stock Book project root. The duplicate historical backup folders
+were excluded to keep this package below GitHub's 100-file browser-upload limit.
+
+UPLOAD TO GITHUB (web browser):
+1. Extract this ZIP on your computer.
+2. Open the extracted folder. It contains package.json, server.mjs, netlify.toml,
+   index.html, netlify/, and tg/.
+3. In your GitHub repository, choose Add file -> Upload files.
+4. Select ALL CONTENTS inside the extracted folder (Ctrl+A), not the wrapper folder.
+5. Drag the selected contents into the GitHub upload page. Keep all folders and
+   subfolders together; do not flatten the directory structure.
+6. Commit the changes to the branch connected to your deployment.
+
+The project root must have package.json and server.mjs directly at its top level.
+Do not upload .env files, passwords, API keys, or service-account JSON files.
+Do not delete existing environment variables in the hosting provider.
+
+This is a source upload package, not proof of a live deployment or production data audit.

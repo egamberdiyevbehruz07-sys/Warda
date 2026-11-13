@@ -836,21 +836,39 @@ function summarizeMonth(r, rows, daily, verify) {
     stores
   };
 }
+// Versioned dashboard cache: bypass the old summaries once without deleting any Supabase rows.
+// Completed dates are rechecked periodically; the live day/rolling periods refresh more often.
+const DASH_CACHE_VERSION = '2026-11-12-r5';
+const DASH_CURRENT_TTL_MS = 3 * 60 * 1000;
+const DASH_COMPLETED_TTL_MS = 12 * 60 * 60 * 1000;
+const DASH_UNVERIFIED_TTL_MS = 60 * 60 * 1000;
+const DASH_BUILD_LOCK_MS = 8 * 60 * 1000;
+const dashDataKey = monthKey => `dash:${DASH_CACHE_VERSION}:${monthKey}`;
+const dashBuildKey = monthKey => `dashbuild:${DASH_CACHE_VERSION}:${monthKey}`;
+
 async function dashBuild(monthKey) {
   const r = monthRange(monthKey);
   try {
     const { rows, daily, verify } = await collectBillz(r.from, r.to, { verify: true });
     const payload = summarizeMonth(r, rows, daily, verify);
-    await cacheSet('dash:' + monthKey, payload);
+    const saved = await cacheSet(dashDataKey(monthKey), payload);
+    if (!saved) throw new Error('Dashboard ma’lumotlarini Supabase cache ga saqlab bo‘lmadi.');
     return payload;
-  } finally { await cacheSet('dashbuild:' + monthKey, { at: 0 }); }
+  } finally { await cacheSet(dashBuildKey(monthKey), { at: 0 }); }
 }
 async function dashGet(monthKey) {
-  const hit = await cacheGet('dash:' + monthKey);
-  if (!hit || !hit.payload || !hit.payload.meta) return { payload: null, fresh: false };
-  const p = hit.payload, now = monthRange(monthKey).partial;
-  const fresh = now ? (Date.now() - Date.parse(p.meta.built) < 30 * 60 * 1000) : !p.meta.partial;
-  return { payload: p, fresh };
+  const [hit, lock] = await Promise.all([cacheGet(dashDataKey(monthKey)), cacheGet(dashBuildKey(monthKey))]);
+  const lockAt = Number(lock && lock.payload && lock.payload.at || 0);
+  const lockAge = Date.now() - lockAt;
+  const building = lockAt > 0 && lockAge >= 0 && lockAge < DASH_BUILD_LOCK_MS;
+  if (!hit || !hit.payload || !hit.payload.meta) return { payload: null, fresh: false, building };
+  const p = hit.payload;
+  const age = Date.now() - Date.parse(hit.updated_at || p.meta.built || '');
+  const range = monthRange(monthKey);
+  const verified = !!(p.meta.verify && p.meta.verify.ok === true);
+  const ttl = range.partial ? DASH_CURRENT_TTL_MS : (verified ? DASH_COMPLETED_TTL_MS : DASH_UNVERIFIED_TTL_MS);
+  const fresh = Number.isFinite(age) && age >= 0 && age < ttl;
+  return { payload: p, fresh, building };
 }
 // Returns months that need (re)building and have no build already running; marks them as running.
 async function dashClaimBuilds(months, force) {
@@ -858,12 +876,18 @@ async function dashClaimBuilds(months, force) {
   for (const m of months) {
     const { fresh } = await dashGet(m);
     if (fresh && !force) continue;
-    const mk = await cacheGet('dashbuild:' + m);
-    if (mk && mk.payload && Date.now() - Number(mk.payload.at || 0) < 8 * 60 * 1000) continue;
-    await cacheSet('dashbuild:' + m, { at: Date.now() });
+    const mk = await cacheGet(dashBuildKey(m));
+    const lockAt = Number(mk && mk.payload && mk.payload.at || 0);
+    const lockAge = Date.now() - lockAt;
+    if (lockAt > 0 && lockAge >= 0 && lockAge < DASH_BUILD_LOCK_MS) continue;
+    const locked = await cacheSet(dashBuildKey(m), { at: Date.now() });
+    if (!locked) throw new Error('Dashboard build lock could not be saved in Supabase; refusing to start a duplicate BILLZ fetch.');
     todo.push(m);
   }
   return todo;
+}
+async function dashReleaseBuilds(months) {
+  await Promise.all((months || []).map(m => cacheSet(dashBuildKey(m), { at: 0 })));
 }
 
 /* ------------------- Mini App access (Telegram initData) ------------------- */
@@ -979,5 +1003,5 @@ async function sendSalesCheck(chatId, date) {
 async function wasMonthlySent(monthKey) { const r = await cacheGet('monthly-sent:' + monthKey); return !!r; }
 async function markMonthlySent(monthKey) { await cacheSet('monthly-sent:' + monthKey, { sentAt: new Date().toISOString() }); }
 
-module.exports = { sendSalesCheck, sendCompareView, dashLabels, dashWeekOptions, cacheGet, cacheSet, shiftMonth, monthLabel, validMonth, dashOptions, dashDayOptions, dashDefaults, dashBuild, dashGet, dashClaimBuilds, summarizeMonth, monthRange, verifyInitData, isAuthorizedUser, rangeForPeriod, wasMonthlySent, markMonthlySent, getTelegramToken, todayTashkent, telegram, sendDailyReport, syncBillzToday, saveTelegramSettings, getTelegramSettings,
+module.exports = { sendSalesCheck, sendCompareView, dashLabels, dashWeekOptions, cacheGet, cacheSet, shiftMonth, monthLabel, validMonth, dashOptions, dashDayOptions, dashDefaults, dashBuild, dashGet, dashClaimBuilds, dashReleaseBuilds, summarizeMonth, monthRange, verifyInitData, isAuthorizedUser, rangeForPeriod, wasMonthlySent, markMonthlySent, getTelegramToken, todayTashkent, telegram, sendDailyReport, syncBillzToday, saveTelegramSettings, getTelegramSettings,
   wasNightlySent, markNightlySent, sendMenu, menuText, menuKeyboard, dateForPeriod, sendReportView, recordSeenChat, listSeenChats, isAuthorizedChat, webhookSecret, STORE_MENU };

@@ -139,23 +139,36 @@ const tap=()=>{try{tg&&tg.HapticFeedback&&tg.HapticFeedback.selectionChanged()}c
 /* ---------- data ---------- */
 async function api(months,refresh){
   if(demo)return demoApi(months);
-  const r=await fetch('/.netlify/functions/tg-dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({initData:tg?tg.initData:'',months,refresh:!!refresh})});
+  const r=await fetch('/.netlify/functions/tg-dashboard',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({initData:tg?tg.initData:'',months,refresh:!!refresh})});
   const j=await r.json().catch(()=>({}));
   if(!r.ok)throw Object.assign(new Error(j.error||('Xato '+r.status)),{code:r.status});
   return j;
 }
+let loadSequence=0;
 async function load(refresh){
+  const sequence=++loadSequence;
   clearTimeout(S.poll);
   try{
-    if(!demo&&!(tg&&tg.initData)){S.status='out';return render()}
-    if(!S.opts.length){const j=await api([]);S.opts=j.options;S.wopts=j.weekOptions||[];S.dopts=j.dayOptions||[];S.defs=j.defaults;applySel()}
-    const j=await api(need(),refresh);
+    if(!demo&&!(tg&&tg.initData)){if(sequence!==loadSequence)return;S.status='out';return render()}
+    if(!S.opts.length){
+      const initial=await api([]);
+      if(sequence!==loadSequence)return;
+      S.opts=initial.options;S.wopts=initial.weekOptions||[];S.dopts=initial.dayOptions||[];S.defs=initial.defaults;applySel();
+    }
+    const selectedMonths=need();
+    if(!selectedMonths.length){if(sequence!==loadSequence)return;S.status='error';S.err='Hisobot sanasini tanlang.';return render()}
+    const j=await api(selectedMonths,refresh);
+    // Ignore a response for an older date/tab selection; it must not overwrite the newest view state.
+    if(sequence!==loadSequence)return;
     Object.assign(S.data,j.months||{});
     S.status=j.status;S.err='';
     render();
     if(j.status!=='ready')S.poll=setTimeout(()=>load(false),6000);
     else $('#rf').classList.remove('spin');
-  }catch(e){S.status='error';S.err=e.message||String(e);S.code=e.code;render();$('#rf').classList.remove('spin')}
+  }catch(e){
+    if(sequence!==loadSequence)return;
+    S.status='error';S.err=e.message||String(e);S.code=e.code;render();$('#rf').classList.remove('spin')
+  }
 }
 function fillSel(){
   const list=listFor(kindNow());
@@ -299,7 +312,8 @@ function report(a){
   const top=s.top.slice(0,10);
   h+=`<section class="card fade"><h2>Top 10 mahsulot</h2>${top.length?top.map((x,i)=>`<div class="tp"><div class="rk">${i+1}</div><div class="ph">${x.p?`<img loading="lazy" src="${esc(x.p)}" alt="" onerror="this.remove()">`:'🛍️'}</div><div class="b"><div class="row"><div class="nm">${esc(x.n)}</div><div class="q">${n(x.s)}</div></div>${prodChips(x.c)}</div></div>`).join(''):'<p class="mu">Bu davrda savdo yo‘q.</p>'}</section>`;
   let t='';try{t=new Date(m.built).toLocaleString('uz-UZ',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}catch(e){}
-  return h+`<div class="note">Manba: BILLZ · yangilangan ${esc(t)}${m.partial?' · davr tugamagan':''}</div>`}
+  const updating=S.status==='updating'?`<section class="card fade" style="border-color:var(--ac2);font-size:12.5px">🔄 BILLZ ma’lumotlari qayta tekshirilmoqda. Hozir ko‘rinayotgan raqamlar oxirgi saqlangan nusxa; yangilash tugamaguncha yakuniy deb hisoblamang.</section>`:'';
+  return updating+h+`<div class="note">Manba: BILLZ · yangilangan ${esc(t)}${m.partial?' · davr tugamagan':''}</div>`}
 function chipsHtml(){tabUi();$('#chips').innerHTML=STORES.map(([k,n])=>`<button class="chip ${S.scope===k?'on':''}" data-s="${k}">${n}</button>`).join('')}
 function render(){
   const m=$('#main');chipsHtml();

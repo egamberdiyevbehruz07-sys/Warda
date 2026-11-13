@@ -18,9 +18,7 @@ const fns = new Map(); // name -> { kind: 'v2' (Request/Response) | 'v1' (event/
 for (const f of await fs.readdir(fnDir)) {
   if (!/\.(mjs|js|cjs)$/.test(f)) continue;
   const name = f.replace(/\.(mjs|js|cjs)$/, '');
-  let mod;
-  try { mod = await import(pathToFileURL(path.join(fnDir, f)).href); }
-  catch (e) { console.error('Skipped broken function file', f, '-', e.message); continue; } // one bad file must not stop the whole server
+  const mod = await import(pathToFileURL(path.join(fnDir, f)).href);
   if (typeof mod.default === 'function') fns.set(name, { kind: 'v2', handler: mod.default, schedule: mod.config && mod.config.schedule });
   else if (mod.default && typeof mod.default.handler === 'function') fns.set(name, { kind: 'v1', handler: mod.default.handler });
   else if (typeof mod.handler === 'function') fns.set(name, { kind: 'v1', handler: mod.handler });
@@ -100,7 +98,7 @@ setInterval(() => {
   const now = new Date(), key = now.toISOString().slice(0, 16);
   if (key === lastTick) return; lastTick = key;
   for (const [name, fn] of fns) {
-    if (fn.schedule && cronMatch(fn.schedule, now)) {
+    if (fn.schedule && !name.includes('telegram-report') && cronMatch(fn.schedule, now)) {
       console.log('Scheduled run:', name, key);
       Promise.resolve().then(() => fn.handler(new Request(`http://localhost:${PORT}/.netlify/functions/${name}`, { method: 'POST', body: '{}' }))).catch(e => console.error('Scheduled function failed:', name, e && e.message || e));
     }

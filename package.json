@@ -1,9 +1,11 @@
 {
   "name": "stock-book-netlify",
-  "version": "1.3.0",
+  "version": "1.5.0",
   "private": true,
   "description": "Stock Book with Firebase app data and Supabase-only Telegram reporting (runs on Netlify or any Node host)",
-  "dependencies": {},
+  "dependencies": {
+    "firebase-admin": "^13.5.0"
+  },
   "scripts": {
     "start": "node server.mjs"
   },
