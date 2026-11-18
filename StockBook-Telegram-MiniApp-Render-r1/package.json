@@ -1,0 +1,12 @@
+{
+  "name": "stockbook-telegram-miniapp-render",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Stock Book Telegram Mini App service for Render",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.mjs",
+    "configure:telegram": "node scripts/configure-telegram.mjs"
+  }
+}

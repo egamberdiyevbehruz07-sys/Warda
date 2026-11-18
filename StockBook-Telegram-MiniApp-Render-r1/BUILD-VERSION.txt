@@ -1,0 +1,7 @@
+Stock Book Telegram Mini App — Render-only release r1
+Base: Existing Stock Book Telegram Mini App dashboard from the uploaded 2026-11-18 r3 package.
+Contents: /tg UI, dashboard/background/webhook handlers and existing Telegram reporting core only.
+Excluded: Main Stock Book catalog, main system HTML, Firebase client app, Netlify main-site configuration and unrelated operations.
+Render settings: Node 20+, npm install, npm start, /healthz.
+Mini App image preview: full-screen overlay; custom double-tap and pinch zoom; tap outside or close button returns to report.
+No production hosting, bot menu or webhook changes are performed by this ZIP itself.
