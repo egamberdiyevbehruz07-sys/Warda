@@ -1,13 +1,12 @@
 {
-  "name": "stock-book-netlify",
-  "version": "1.5.0",
+  "name": "stock-book-telegram-mini-app-render",
+  "version": "1.0.0",
   "private": true,
-  "description": "Stock Book with Firebase app data and Supabase-only Telegram reporting (runs on Netlify or any Node host)",
-  "dependencies": {
-    "firebase-admin": "^13.5.0"
-  },
+  "type": "module",
+  "description": "Standalone Render service for the Stock Book Telegram Mini App dashboard",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check netlify/functions/tg-dashboard.mjs && node --check netlify/functions/daily-telegram-report-background.mjs"
   },
   "engines": {
     "node": ">=20"

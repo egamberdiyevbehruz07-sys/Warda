@@ -31,8 +31,8 @@ async function supabaseRequest(path, options = {}) {
   if (!body) return null;
   try { return JSON.parse(body); } catch { return body; }
 }
-async function saveTelegramSettings(chatId, enabled = true) {
-  if (!getSupabaseConfig()) return false;
+async function saveTelegramSettings(chatId, enabled = false) {
+  if (!getSupabaseConfig()) throw new Error('Access Management is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the hosting service.');
   await supabaseRequest('stock_book_telegram_settings?on_conflict=id', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: { id: 'default', chat_id: String(chatId), enabled: enabled !== false, timezone: TZ, daily_time: '22:30', updated_at: new Date().toISOString() }
@@ -96,7 +96,18 @@ const cut = (v, n = 160) => { const s = String(v == null ? '' : v).trim(); retur
 const qty = x => Math.round(Number(x) || 0);
 const picUrl = v => typeof v === 'string' && (/^https?:\/\//i.test(v) || /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(v)) ? v : '';
 
+// Strict allowlist: only Telegram account, group-membership, webhook and menu configuration
+// methods are permitted. Any message/photo/edit/forward/delete method is blocked by default.
+const TELEGRAM_SAFE_METHODS = new Set([
+  'getMe','getWebhookInfo','getChat','getChatMember','getUpdates',
+  'setWebhook','setMyCommands','setChatMenuButton','setMyShortDescription','setMyDescription',
+  'answerCallbackQuery'
+]);
 async function telegram(method, token, payload, timeoutMs = 20000) {
+  if (!TELEGRAM_SAFE_METHODS.has(String(method))) {
+    console.warn('Blocked Telegram method in Dashboard-only mode:', method);
+    throw new Error('Telegram chat delivery and message changes are disabled. Open the Dashboard Mini App.');
+  }
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -120,52 +131,10 @@ async function telegram(method, token, payload, timeoutMs = 20000) {
   }
   throw lastError || new Error(`Telegram ${method} failed after retries.`);
 }
-async function sendOnePhoto(token, chatId, item) {
-  const p = picUrl(item.photo);
-  if (!p) return false;
-  const caption = cut(item.caption || '', 900);
-  // Try Telegram's remote URL support first; this is the smallest and fastest transfer.
-  if (/^https?:\/\//i.test(p)) {
-    try { await telegram('sendPhoto', token, { chat_id: chatId, photo: p, caption, parse_mode: 'HTML' }, 6000); return true; }
-    catch (_) { /* If Telegram cannot fetch a protected/redirected CDN URL, fetch it here and upload bytes. */ }
-  }
-  try {
-    let bytes, mime = 'image/jpeg', filename = 'product.jpg';
-    if (/^data:image\//i.test(p)) {
-      const m = p.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i); if (!m) return false;
-      mime = m[1]; bytes = Buffer.from(m[2], 'base64'); filename = mime.includes('png') ? 'product.png' : 'product.jpg';
-    } else {
-      const r = await fetch(p, { signal: AbortSignal.timeout(5000) });
-      if (!r.ok) return false;
-      mime = (r.headers.get('content-type') || 'image/jpeg').split(';')[0];
-      const ab = await r.arrayBuffer(); if (ab.byteLength > 9 * 1024 * 1024 || ab.byteLength < 100) return false;
-      bytes = Buffer.from(ab); filename = mime.includes('png') ? 'product.png' : mime.includes('webp') ? 'product.webp' : 'product.jpg';
-    }
-    if (!/^image\//i.test(mime) || bytes.length > 9 * 1024 * 1024) return false;
-    const form = new FormData(); form.set('chat_id', String(chatId)); form.set('caption', caption); form.set('parse_mode', 'HTML');
-    form.set('photo', new Blob([bytes], { type: mime }), filename);
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(6000) });
-    const data = await res.json().catch(() => ({})); return !!(res.ok && data.ok);
-  } catch (e) { console.warn('Photo send skipped:', cut(e.message, 160)); return false; }
-}
-async function sendPhotoAlbum(token, chatId, items, maxItems) {
-  const list = items.filter(x => picUrl(x.photo)).slice(0, maxItems);
-  if (!list.length) return 0;
-  // Group public URLs as an album for a compact Telegram view. Individual upload is a fallback.
-  if (list.length >= 2 && list.every(x => /^https?:\/\//i.test(x.photo))) {
-    try {
-      await telegram('sendMediaGroup', token, { chat_id: chatId, media: list.map(x => ({ type: 'photo', media: x.photo, caption: cut(x.caption || '', 900), parse_mode: 'HTML' })) }, 7000);
-      return list.length;
-    } catch (e) { console.warn('Photo album URL fallback:', cut(e.message, 180)); }
-  }
-  let sent = 0;
-  // Limit concurrent fallback sends to five, keeping the daily function inside Netlify's short scheduled runtime.
-  for (let i = 0; i < list.length; i += 5) {
-    const results = await Promise.all(list.slice(i, i + 5).map(x => sendOnePhoto(token, chatId, x).catch(() => false)));
-    sent += results.filter(Boolean).length;
-  }
-  return sent;
-}
+// Legacy report-photo helpers are retained as inert compatibility shims.
+// Product photos are rendered by the Mini App and are never uploaded to Telegram chats.
+async function sendOnePhoto() { return false; }
+async function sendPhotoAlbum() { return 0; }
 
 function variantLookup(variants) {
   const barcode = new Map(), id = new Map(), skus = new Map();
@@ -393,13 +362,13 @@ function dashboardRow(chatId) {
   const bot = process.env.TELEGRAM_BOT_USERNAME || 'wardareport2026_bot';
   // Once the Main Mini App is configured in BotFather (TELEGRAM_MAIN_MINIAPP=1) this link opens the dashboard right inside the group.
   if (String(process.env.TELEGRAM_MAIN_MINIAPP || '') === '1') return [{ text: '📊 Dashboardni ochish', url: `https://t.me/${bot}?startapp=dash` }];
-  return [{ text: '📊 Dashboard (shaxsiy chatda)', url: `https://t.me/${bot}?start=dash` }];
+  return [{ text: '📊 Dashboardni ochish', url: `https://t.me/${bot}?start=dash` }];
 }
 function menuKeyboard(period = '0', chatId) {
   return { inline_keyboard: [dashboardRow(chatId === undefined ? 0 : chatId)] }; // one button: the Mini App dashboard
 }
 function menuText() {
-  return '📊 <b>HISOBOT</b>\n\nDashboardda: kunlik, haftalik, oylik hisobot va taqqoslash. Pastdagi tugmani bosing.';
+  return '📊 <b>HISOBOT</b>\n\nDashboardda kunlik, haftalik va oylik hisobotlar alohida, taqqoslash esa alohida bo‘limda. Pastdagi tugmani bosing.';
 }
 async function sendMenu(token, chatId, period = '0', intro) {
   return telegram('sendMessage', token, { chat_id: chatId, text: menuText(period, intro), parse_mode: 'HTML', reply_markup: menuKeyboard(period, chatId) });
@@ -510,6 +479,39 @@ async function isAuthorizedChat(chatId) {
   return !!(cfg && cfg.chatId && String(cfg.chatId) === String(chatId));
 }
 function webhookSecret() { return require('crypto').createHash('sha256').update('stockbook-telegram:' + getTelegramToken()).digest('hex'); }
+function billzPaymentBucket(name) {
+  const n = String(name || '').toLowerCase().replace(/[’‘`ʻʼ]/g, "'");
+  if (/безнал/.test(n)) return 'other';
+  if (/cash|naqd|nakd|налич|кэш|kassa/.test(n)) return 'cash';
+  if (/card|карта|карт|plastik|пластик|terminal|терминал|uzcard|humo|visa|master\s?card/.test(n)) return 'card';
+  return 'other';
+}
+function summarizeBillzPayments(totals) {
+  if (!totals || !Array.isArray(totals.payments)) return { available: false, cash: 0, card: 0, other: 0, total: 0, methods: [] };
+  const out = { available: true, cash: 0, card: 0, other: 0, total: 0, grossSales: Number(totals.gross_sales) || 0, netSales: Number(totals.total_price) || 0, soldUnits: Number(totals.sold_measurement_value) || 0, returnedUnits: Number(totals.returned_measurement_value) || 0, methods: [] };
+  const byName = new Map();
+  for (const p of totals.payments) {
+    const name = String(p.payment_type_name || 'Unspecified payment type').trim() || 'Unspecified payment type';
+    const amount = Number(p.sum) || 0;
+    const bucket = billzPaymentBucket(name);
+    out[bucket] += amount; out.total += amount;
+    const old = byName.get(name) || { name, bucket, amount: 0 };
+    old.amount += amount; byName.set(name, old);
+  }
+  out.methods = [...byName.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  return out;
+}
+function combineBillzPayments(list) {
+  const valid = (list || []).filter(x => x && x.available);
+  const out = { available: valid.length > 0, partial: valid.length > 0 && valid.length < (list || []).length, storesAvailable: valid.length, storesExpected: (list || []).length, cash: 0, card: 0, other: 0, total: 0, methods: [] };
+  const methods = new Map();
+  for (const x of valid) {
+    for (const k of ['cash', 'card', 'other', 'total']) out[k] += Number(x[k]) || 0;
+    for (const m of x.methods || []) { const old = methods.get(m.name) || { name: m.name, bucket: m.bucket, amount: 0 }; old.amount += Number(m.amount) || 0; methods.set(m.name, old); }
+  }
+  out.methods = [...methods.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  return out;
+}
 
 // Pull today's final BILLZ transaction snapshot on the server immediately before the scheduled Telegram report.
 // Writes use deterministic document IDs and small batches; previous BILLZ-synced records for the same date
@@ -619,6 +621,22 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
     fetchRows('/v1/product-general-table', { start_date: rangeFrom, end_date: rangeTo, shop_ids: shopsArg, detalization: 'day', detalization_by_position: 'true', price_type: 0, currency: 'UZS' }, ['products_stats_by_date']),
     (catalogMemo && Date.now() - catalogMemo.at < 10 * 60 * 1000 ? Promise.resolve(catalogMemo.rows) : fetchRows('/v2/products', { include_empty_stocks: 'true' }, ['products','items','Items','rows'], 100).then(rows => { catalogMemo = { at: Date.now(), rows }; return rows; }))
   ]);
+  // Actual receipt payment totals from BILLZ. Query SALE only so cash/card figures are not
+  // mixed with refunds; unknown BILLZ payment types remain visible as Other.
+  const paymentsByStore = {};
+  if (opts.includePayments) {
+    const paymentShops = shops.filter(shop => STORE_MENU.some(m => normName(m.name) === normName(storeFor(shop.id))));
+    for (const shop of paymentShops) {
+      const store = storeFor(shop.id);
+      try {
+        const totals = await apiGet('/v1/transaction-report-totals', { start_date: rangeFrom, end_date: rangeTo, shop_ids: shop.id, order_types: 'SALE', price_type: 0 });
+        paymentsByStore[normName(store)] = summarizeBillzPayments(totals);
+      } catch (e) {
+        console.warn('BILLZ payment totals unavailable for', store, cut(e.message, 150));
+        paymentsByStore[normName(store)] = { available: false, cash: 0, card: 0, other: 0, total: 0, methods: [], error: cut(e.message, 180) };
+      }
+    }
+  }
 
   // The BILLZ daily sales report often omits product images. Resolve each sale
   // against the full BILLZ catalog, where product photos and variant attributes live.
@@ -717,7 +735,7 @@ async function collectBillz(rangeFrom, rangeTo, opts = {}) {
     } catch (e) { console.warn('BILLZ total check failed:', cut(e.message, 160)); }
   }
   const rows = [...generated.values()];
-  return { rows, daily, verify, counts: { imports: imports.length, writeoffs: writeoffs.length, salesRows: sales.length, savedRows: rows.length } };
+  return { rows, daily, verify, paymentsByStore, counts: { imports: imports.length, writeoffs: writeoffs.length, salesRows: sales.length, savedRows: rows.length, paymentStores: Object.values(paymentsByStore).filter(x => x.available).length } };
 }
 
 // Nightly / daily snapshot: one day from BILLZ, archived in Supabase.
@@ -842,7 +860,7 @@ function monthRange(key) {
   const partial = key === today.slice(0, 7), from = key + '-01', to = partial ? today : key + '-' + String(fullDays).padStart(2, '0');
   return { key, from, to, partial, fullDays, days: dayCount(from, to) };
 }
-function summarizeMonth(r, rows, daily, verify) {
+function summarizeMonth(r, rows, daily, verify, paymentsByStore = {}) {
   const d = aggregate(rows, r.to, { top: 40 });
   const desc = (a, b) => b.qty - a.qty;
   const colorsOut = list => [...(list || [])].sort(desc).slice(0, 8).map(c => [colorLabelUz(c.color), c.qty]);
@@ -859,29 +877,49 @@ function summarizeMonth(r, rows, daily, verify) {
     const st = d.stores.find(x => normName(x.store) === normName(m.name));
     const imp = d.importsRows.filter(x => normName(x.to) === normName(m.name)).reduce((a, x) => a + Math.abs(qty(x.qty)), 0);
     const off = d.writeoffRows.filter(x => normName(x.from) === normName(m.name)).reduce((a, x) => a + Math.abs(qty(x.qty)), 0);
-    return { key: m.key, name: m.name, sold: st ? st.gross : 0, ret: st ? st.returns : 0, net: st ? st.net : 0, imp, off, colors: st ? colorsOut(st.colors) : [], top: st ? st.salesProducts.map((x, i) => prod(x, i < 10)) : [], daily: series(m.name) };
+    const payments = paymentsByStore[normName(m.name)] || { available: false, cash: 0, card: 0, other: 0, total: 0, methods: [] };
+    return { key: m.key, name: m.name, sold: st ? st.gross : 0, ret: st ? st.returns : 0, net: st ? st.net : 0, imp, off, payments, colors: st ? colorsOut(st.colors) : [], top: st ? st.salesProducts.map((x, i) => prod(x, i < 10)) : [], daily: series(m.name) };
   });
+  const paymentTotals = combineBillzPayments(stores.map(x => x.payments));
   return {
-    meta: { ...dashLabels(r.key), month: r.key, from: r.from, to: r.to, days: r.days, fullDays: r.fullDays, partial: r.partial, built: new Date().toISOString(), verify: verify || null },
-    all: { sold: d.gross, ret: d.returns, net: d.net, imp: d.importQty, off: d.writeoffQty, colors: colorsOut(d.colors), top: d.salesProducts.map((x, i) => prod(x, i < 10)), daily: series('') },
+    meta: { ...dashLabels(r.key), month: r.key, from: r.from, to: r.to, days: r.days, fullDays: r.fullDays, partial: r.partial, built: new Date().toISOString(), verify: verify || null, paymentAnalytics: { available: paymentTotals.available, partial: paymentTotals.partial, storesAvailable: paymentTotals.storesAvailable, storesExpected: paymentTotals.storesExpected } },
+    all: { sold: d.gross, ret: d.returns, net: d.net, imp: d.importQty, off: d.writeoffQty, payments: paymentTotals, colors: colorsOut(d.colors), top: d.salesProducts.map((x, i) => prod(x, i < 10)), daily: series('') },
     stores
   };
 }
+// Versioned dashboard cache: bypass the old summaries once without deleting any Supabase rows.
+// Completed dates are rechecked periodically; the live day/rolling periods refresh more often.
+const DASH_CACHE_VERSION = '2026-11-13-management-analytics-r1';
+const DASH_CURRENT_TTL_MS = 3 * 60 * 1000;
+const DASH_COMPLETED_TTL_MS = 12 * 60 * 60 * 1000;
+const DASH_UNVERIFIED_TTL_MS = 60 * 60 * 1000;
+const DASH_BUILD_LOCK_MS = 8 * 60 * 1000;
+const dashDataKey = monthKey => `dash:${DASH_CACHE_VERSION}:${monthKey}`;
+const dashBuildKey = monthKey => `dashbuild:${DASH_CACHE_VERSION}:${monthKey}`;
+
 async function dashBuild(monthKey) {
   const r = monthRange(monthKey);
   try {
-    const { rows, daily, verify } = await collectBillz(r.from, r.to, { verify: true });
-    const payload = summarizeMonth(r, rows, daily, verify);
-    await cacheSet('dash:' + monthKey, payload);
+    const { rows, daily, verify, paymentsByStore } = await collectBillz(r.from, r.to, { verify: true, includePayments: true });
+    const payload = summarizeMonth(r, rows, daily, verify, paymentsByStore);
+    const saved = await cacheSet(dashDataKey(monthKey), payload);
+    if (!saved) throw new Error('Dashboard ma’lumotlarini Supabase cache ga saqlab bo‘lmadi.');
     return payload;
-  } finally { await cacheSet('dashbuild:' + monthKey, { at: 0 }); }
+  } finally { await cacheSet(dashBuildKey(monthKey), { at: 0 }); }
 }
 async function dashGet(monthKey) {
-  const hit = await cacheGet('dash:' + monthKey);
-  if (!hit || !hit.payload || !hit.payload.meta) return { payload: null, fresh: false };
-  const p = hit.payload, now = monthRange(monthKey).partial;
-  const fresh = now ? (Date.now() - Date.parse(p.meta.built) < 30 * 60 * 1000) : !p.meta.partial;
-  return { payload: p, fresh };
+  const [hit, lock] = await Promise.all([cacheGet(dashDataKey(monthKey)), cacheGet(dashBuildKey(monthKey))]);
+  const lockAt = Number(lock && lock.payload && lock.payload.at || 0);
+  const lockAge = Date.now() - lockAt;
+  const building = lockAt > 0 && lockAge >= 0 && lockAge < DASH_BUILD_LOCK_MS;
+  if (!hit || !hit.payload || !hit.payload.meta) return { payload: null, fresh: false, building };
+  const p = hit.payload;
+  const age = Date.now() - Date.parse(hit.updated_at || p.meta.built || '');
+  const range = monthRange(monthKey);
+  const verified = !!(p.meta.verify && p.meta.verify.ok === true);
+  const ttl = range.partial ? DASH_CURRENT_TTL_MS : (verified ? DASH_COMPLETED_TTL_MS : DASH_UNVERIFIED_TTL_MS);
+  const fresh = Number.isFinite(age) && age >= 0 && age < ttl;
+  return { payload: p, fresh, building };
 }
 // Returns months that need (re)building and have no build already running; marks them as running.
 async function dashClaimBuilds(months, force) {
@@ -889,12 +927,18 @@ async function dashClaimBuilds(months, force) {
   for (const m of months) {
     const { fresh } = await dashGet(m);
     if (fresh && !force) continue;
-    const mk = await cacheGet('dashbuild:' + m);
-    if (mk && mk.payload && Date.now() - Number(mk.payload.at || 0) < 8 * 60 * 1000) continue;
-    await cacheSet('dashbuild:' + m, { at: Date.now() });
+    const mk = await cacheGet(dashBuildKey(m));
+    const lockAt = Number(mk && mk.payload && mk.payload.at || 0);
+    const lockAge = Date.now() - lockAt;
+    if (lockAt > 0 && lockAge >= 0 && lockAge < DASH_BUILD_LOCK_MS) continue;
+    const locked = await cacheSet(dashBuildKey(m), { at: Date.now() });
+    if (!locked) throw new Error('Dashboard build lock could not be saved in Supabase; refusing to start a duplicate BILLZ fetch.');
     todo.push(m);
   }
   return todo;
+}
+async function dashReleaseBuilds(months) {
+  await Promise.all((months || []).map(m => cacheSet(dashBuildKey(m), { at: 0 })));
 }
 
 /* ------------------- Mini App access (Telegram initData) ------------------- */
@@ -916,9 +960,11 @@ function verifyInitData(initData, maxAgeSec = 86400) {
 const memberCache = new Map();
 async function isAuthorizedUser(userId) {
   const id = String(userId);
-  if (String(process.env.TELEGRAM_ALLOWED_USER_IDS || '').split(',').map(x => x.trim()).includes(id)) return true;
+  if (String(process.env.TELEGRAM_ALLOWED_USER_IDS || '').split(',').map(x => x.trim()).filter(Boolean).includes(id)) return true;
   const hit = memberCache.get(id);
-  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.ok;
+  // Cache only positive membership briefly. A newly-added manager should not remain denied
+  // because an earlier negative result was cached for several minutes.
+  if (hit && hit.ok && Date.now() - hit.at < 15000) return true;
   let ok = false;
   try {
     const cfg = await getTelegramSettings();
@@ -927,7 +973,8 @@ async function isAuthorizedUser(userId) {
       ok = ['creator', 'administrator', 'member'].includes(m.status) || (m.status === 'restricted' && m.is_member === true);
     }
   } catch (e) { console.warn('getChatMember failed (make the bot an admin of the group):', cut(e.message, 140)); }
-  memberCache.set(id, { ok, at: Date.now() });
+  if (ok) memberCache.set(id, { ok: true, at: Date.now() });
+  else memberCache.delete(id);
   return ok;
 }
 
@@ -1007,5 +1054,5 @@ async function sendSalesCheck(chatId, date) {
 async function wasMonthlySent(monthKey) { const r = await cacheGet('monthly-sent:' + monthKey); return !!r; }
 async function markMonthlySent(monthKey) { await cacheSet('monthly-sent:' + monthKey, { sentAt: new Date().toISOString() }); }
 
-module.exports = { sendSalesCheck, sendCompareView, dashLabels, dashWeekOptions, cacheGet, cacheSet, shiftMonth, monthLabel, validMonth, dashOptions, dashDayOptions, dashDefaults, dashBuild, dashGet, dashClaimBuilds, summarizeMonth, monthRange, verifyInitData, isAuthorizedUser, rangeForPeriod, wasMonthlySent, markMonthlySent, getTelegramToken, todayTashkent, telegram, sendDailyReport, syncBillzToday, saveTelegramSettings, getTelegramSettings,
+module.exports = { sendSalesCheck, sendCompareView, dashLabels, dashWeekOptions, cacheGet, cacheSet, shiftMonth, monthLabel, validMonth, dashOptions, dashDayOptions, dashDefaults, dashBuild, dashGet, dashClaimBuilds, dashReleaseBuilds, summarizeMonth, monthRange, verifyInitData, isAuthorizedUser, rangeForPeriod, wasMonthlySent, markMonthlySent, getTelegramToken, todayTashkent, telegram, sendDailyReport, syncBillzToday, saveTelegramSettings, getTelegramSettings,
   wasNightlySent, markNightlySent, sendMenu, menuText, menuKeyboard, dateForPeriod, sendReportView, recordSeenChat, listSeenChats, isAuthorizedChat, webhookSecret, STORE_MENU };
